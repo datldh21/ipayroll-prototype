@@ -248,3 +248,43 @@ export interface User {
   role: UserRole;
   avatar?: string;
 }
+
+// ==================== ĐỀ XUẤT CHỈNH SỬA ====================
+export type ProposalType = 'timekeeping' | 'payroll';
+export type ProposalStatus = 'pending' | 'processing' | 'resolved' | 'rejected';
+
+export const PROPOSAL_TYPE_LABELS: Record<ProposalType, string> = {
+  timekeeping: 'Bảng công',
+  payroll: 'Bảng lương',
+};
+
+export const PROPOSAL_STATUS_LABELS: Record<ProposalStatus, string> = {
+  pending: 'Chờ xử lý',
+  processing: 'Đang xử lý',
+  resolved: 'Đã xử lý',
+  rejected: 'Từ chối',
+};
+
+export const PROPOSAL_STATUS_COLORS: Record<ProposalStatus, string> = {
+  pending: 'bg-amber-100 text-amber-700',
+  processing: 'bg-blue-100 text-blue-700',
+  resolved: 'bg-green-100 text-green-700',
+  rejected: 'bg-red-100 text-red-700',
+};
+
+export interface Proposal {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  type: ProposalType;
+  month: number;
+  year: number;
+  subject: string;
+  description: string;
+  status: ProposalStatus;
+  createdAt: string;
+  response?: string;
+  respondedBy?: string;
+  respondedAt?: string;
+}

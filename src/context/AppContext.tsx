@@ -8,6 +8,8 @@ import {
   PayrollBatch,
   PayrollRecord,
   User,
+  Proposal,
+  ProposalStatus,
 } from '../types';
 import {
   mockEmployees,
@@ -15,6 +17,7 @@ import {
   mockSocialInsurance,
   mockVariableIncomes,
   mockPayrollBatches,
+  mockProposals,
   defaultGrossPackage,
   employeePackageOverrides,
 } from '../data/mockData';
@@ -41,6 +44,9 @@ interface AppContextType {
   approveBatch: (batchId: string) => void;
   emailsSent: Record<string, boolean>;
   setEmailsSent: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  proposals: Proposal[];
+  addProposal: (proposal: Omit<Proposal, 'id' | 'createdAt' | 'status'>) => void;
+  respondProposal: (id: string, status: ProposalStatus, response: string) => void;
 }
 
 const users: User[] = [
@@ -63,6 +69,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [packageOverrides, setPackageOverrides] = useState<Record<string, Partial<GrossPackage>>>(employeePackageOverrides);
   const [payrollBatches, setPayrollBatches] = useState<PayrollBatch[]>(mockPayrollBatches);
   const [emailsSent, setEmailsSent] = useState<Record<string, boolean>>({});
+  const [proposals, setProposals] = useState<Proposal[]>(mockProposals);
+
+  const addProposal = useCallback((data: Omit<Proposal, 'id' | 'createdAt' | 'status'>) => {
+    const proposal: Proposal = {
+      ...data,
+      id: `PRP-${Date.now()}`,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+    setProposals(prev => [proposal, ...prev]);
+  }, []);
+
+  const respondProposal = useCallback((id: string, status: ProposalStatus, response: string) => {
+    setProposals(prev =>
+      prev.map(p =>
+        p.id === id
+          ? { ...p, status, response, respondedBy: currentUser.name, respondedAt: new Date().toISOString() }
+          : p
+      )
+    );
+  }, [currentUser]);
 
   const generatePayroll = useCallback((month: number, year: number): PayrollBatch => {
     const records: PayrollRecord[] = employees.map((emp) => {
@@ -145,6 +172,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         approveBatch,
         emailsSent,
         setEmailsSent,
+        proposals,
+        addProposal,
+        respondProposal,
       }}
     >
       {children}
