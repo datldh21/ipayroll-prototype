@@ -1,21 +1,21 @@
 import React, { useState } from 'react';
-import { Calculator, Play, Eye, X, ChevronDown, ChevronUp, Send } from 'lucide-react';
+import { Calculator, Play, Eye, X, Send } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { formatCurrency } from '../utils/payrollCalculator';
 import { PayrollRecord, EMPLOYEE_STATUS_LABELS, EMPLOYEE_STATUS_COLORS } from '../types';
+
+const fc = (v: number) => (v === 0 ? '0' : formatCurrency(v));
 
 export default function Payroll() {
   const { payrollBatches, generatePayroll, setPayrollBatches } = useApp();
   const [month, setMonth] = useState(2);
   const [year, setYear] = useState(2026);
   const [detailRecord, setDetailRecord] = useState<PayrollRecord | null>(null);
-  const [showVariableIncome, setShowVariableIncome] = useState(false);
 
   const currentBatch = payrollBatches.find((b) => b.month === month && b.year === year);
+  const recs = currentBatch?.records ?? [];
 
-  const handleGenerate = () => {
-    generatePayroll(month, year);
-  };
+  const handleGenerate = () => generatePayroll(month, year);
 
   const handleSubmitForApproval = () => {
     if (!currentBatch) return;
@@ -25,6 +25,8 @@ export default function Payroll() {
       )
     );
   };
+
+  const sum = (fn: (r: PayrollRecord) => number) => recs.reduce((s, r) => s + fn(r), 0);
 
   return (
     <div className="space-y-6">
@@ -51,18 +53,15 @@ export default function Payroll() {
             <option key={y} value={y}>{y}</option>
           ))}
         </select>
-
         <div className="flex items-center gap-3 ml-auto">
           <button onClick={handleGenerate}
             className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/25">
-            <Play size={16} />
-            Tính lương
+            <Play size={16} /> Tính lương
           </button>
-          {currentBatch && currentBatch.status === 'draft' && (
+          {currentBatch?.status === 'draft' && (
             <button onClick={handleSubmitForApproval}
               className="flex items-center gap-2 bg-amber-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:bg-amber-600 transition-colors shadow-lg shadow-amber-500/25">
-              <Send size={16} />
-              Gửi duyệt
+              <Send size={16} /> Gửi duyệt
             </button>
           )}
         </div>
@@ -97,106 +96,196 @@ export default function Payroll() {
             </span>
           </div>
 
-          {/* Toggle */}
-          <button onClick={() => setShowVariableIncome(!showVariableIncome)}
-            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium">
-            {showVariableIncome ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            {showVariableIncome ? 'Ẩn chi tiết thu nhập' : 'Hiện chi tiết thu nhập'}
-          </button>
-
-          {/* Payroll Table */}
+          {/* Full detail payroll table */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-[11px] whitespace-nowrap">
                 <thead>
-                  <tr className="bg-slate-50/80 text-left text-xs text-slate-500 uppercase tracking-wider">
-                    <th className="px-3 py-3.5 font-medium sticky left-0 bg-slate-50/80 z-10">Mã NV</th>
-                    <th className="px-3 py-3.5 font-medium">Họ và tên</th>
-                    <th className="px-3 py-3.5 font-medium">TT</th>
-                    <th className="px-3 py-3.5 font-medium text-center">Công</th>
-                    {showVariableIncome && (
-                      <>
-                        <th className="px-3 py-3.5 font-medium text-right bg-yellow-50/50">TN TV</th>
-                        <th className="px-3 py-3.5 font-medium text-right bg-green-50/50">TN CT</th>
-                        <th className="px-3 py-3.5 font-medium text-right">TN Khác</th>
-                      </>
-                    )}
-                    <th className="px-3 py-3.5 font-medium text-right bg-emerald-50/50">Gross</th>
-                    <th className="px-3 py-3.5 font-medium text-right">Chịu thuế</th>
-                    <th className="px-3 py-3.5 font-medium text-right">BH 10.5%</th>
-                    <th className="px-3 py-3.5 font-medium text-right">Thuế</th>
-                    <th className="px-3 py-3.5 font-medium text-center">Loại</th>
-                    <th className="px-3 py-3.5 font-medium text-right">Tổng trừ</th>
-                    <th className="px-3 py-3.5 font-medium text-right bg-blue-50/50">Net</th>
-                    <th className="px-3 py-3.5 font-medium text-center"></th>
+                  {/* Row 1: Group headers */}
+                  <tr className="bg-slate-100 text-[10px] text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                    <th colSpan={3} className="px-2 py-2 text-left font-semibold sticky left-0 bg-slate-100 z-20">Thông tin</th>
+                    <th colSpan={4} className="px-2 py-2 text-center font-semibold border-l border-slate-200 bg-emerald-50/60 text-emerald-700">
+                      ① Ngày công
+                    </th>
+                    <th colSpan={3} className="px-2 py-2 text-center font-semibold border-l border-slate-200 bg-teal-50/60 text-teal-700">
+                      ① Thu nhập prorated
+                    </th>
+                    <th colSpan={5} className="px-2 py-2 text-center font-semibold border-l border-slate-200 bg-cyan-50/60 text-cyan-700">
+                      ② Thu nhập khác &amp; Gross
+                    </th>
+                    <th colSpan={3} className="px-2 py-2 text-center font-semibold border-l border-slate-200 bg-amber-50/60 text-amber-700">
+                      ③ Thu nhập chịu thuế
+                    </th>
+                    <th colSpan={4} className="px-2 py-2 text-center font-semibold border-l border-slate-200 bg-red-50/60 text-red-700">
+                      ④ BH NLĐ &amp; Giảm trừ
+                    </th>
+                    <th colSpan={3} className="px-2 py-2 text-center font-semibold border-l border-slate-200 bg-rose-50/60 text-rose-700">
+                      ⑤ Thuế TNCN
+                    </th>
+                    <th colSpan={4} className="px-2 py-2 text-center font-semibold border-l border-slate-200 bg-blue-50/60 text-blue-700">
+                      ⑥ Khấu trừ &amp; Net
+                    </th>
+                    <th colSpan={5} className="px-2 py-2 text-center font-semibold border-l border-slate-200 bg-slate-100 text-slate-600">
+                      ⑦ Chi phí Cty
+                    </th>
+                    <th className="px-2 py-2 border-l border-slate-200"></th>
+                  </tr>
+                  {/* Row 2: Column headers */}
+                  <tr className="bg-slate-50/80 text-[10px] text-slate-500 uppercase tracking-wider">
+                    {/* Info */}
+                    <th className="px-2 py-2 font-medium text-left sticky left-0 bg-slate-50 z-20 min-w-[60px]">Mã NV</th>
+                    <th className="px-2 py-2 font-medium text-left min-w-[120px]">Họ tên</th>
+                    <th className="px-2 py-2 font-medium text-left">TT</th>
+                    {/* ① Ngày công */}
+                    <Th border>C.chuẩn</Th>
+                    <Th bg="bg-yellow-50/30">Ng.TV</Th>
+                    <Th bg="bg-green-50/30">Ng.CT</Th>
+                    <Th bg="bg-blue-50/30">Tổng</Th>
+                    {/* ① Thu nhập prorated */}
+                    <Th border bg="bg-yellow-50/30">Cộng TV</Th>
+                    <Th bg="bg-green-50/30">Cộng CT</Th>
+                    <Th>TC Ăn trưa</Th>
+                    {/* ② Thu nhập khác & Gross */}
+                    <Th border>Hoa hồng</Th>
+                    <Th>Thưởng</Th>
+                    <Th>TN khác</Th>
+                    <Th>TC khác</Th>
+                    <Th bg="bg-emerald-50/40" className="font-semibold text-emerald-700">Gross</Th>
+                    {/* ③ Thu nhập chịu thuế */}
+                    <Th border>(-) Ăn trưa</Th>
+                    <Th>(-) ĐT</Th>
+                    <Th bg="bg-amber-50/30" className="font-semibold">TN chịu thuế</Th>
+                    {/* ④ BH NLĐ & Giảm trừ */}
+                    <Th border className="text-red-500">BH 10.5%</Th>
+                    <Th>GT bản thân</Th>
+                    <Th>GT NPT</Th>
+                    <Th bg="bg-amber-50/30" className="font-semibold">TN tính thuế</Th>
+                    {/* ⑤ Thuế */}
+                    <Th border>Loại</Th>
+                    <Th className="text-red-500 font-semibold">Thuế TNCN</Th>
+                    <Th>Đoàn phí</Th>
+                    {/* ⑥ Khấu trừ & Net */}
+                    <Th border className="text-red-600 font-semibold">Tổng trừ</Th>
+                    <Th>Truy thu</Th>
+                    <Th>Cộng thêm</Th>
+                    <Th bg="bg-blue-50/40" className="font-semibold text-blue-700">Net</Th>
+                    {/* ⑦ Chi phí Cty */}
+                    <Th border>BH Cty BHXH</Th>
+                    <Th>BH Cty BHYT</Th>
+                    <Th>BH Cty BHTN</Th>
+                    <Th>ĐP Cty</Th>
+                    <Th bg="bg-slate-100/60" className="font-semibold">Tổng CP Cty</Th>
+                    {/* Detail */}
+                    <Th border></Th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {currentBatch.records.map((r) => (
+                  {recs.map((r) => (
                     <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-3 py-3 font-mono text-xs text-slate-500 sticky left-0 bg-white">{r.employeeId}</td>
-                      <td className="px-3 py-3 font-medium text-slate-800 whitespace-nowrap">{r.employeeName}</td>
-                      <td className="px-3 py-3">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${EMPLOYEE_STATUS_COLORS[r.status]}`}>
+                      {/* Info */}
+                      <td className="px-2 py-2 font-mono text-[10px] text-slate-500 sticky left-0 bg-white z-10">{r.employeeId}</td>
+                      <td className="px-2 py-2 font-medium text-slate-800">{r.employeeName}</td>
+                      <td className="px-2 py-2">
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${EMPLOYEE_STATUS_COLORS[r.status]}`}>
                           {EMPLOYEE_STATUS_LABELS[r.status].slice(0, 6)}
                         </span>
                       </td>
-                      <td className="px-3 py-3 text-center text-xs">
-                        {r.probationDays > 0 && r.officialDays > 0
-                          ? <span><span className="text-yellow-600">{r.probationDays}</span>+<span className="text-green-600">{r.officialDays}</span>/{r.standardDays}</span>
-                          : <span className={r.actualDays < r.standardDays ? 'text-amber-600 font-medium' : ''}>{r.actualDays}/{r.standardDays}</span>
-                        }
-                      </td>
-                      {showVariableIncome && (
-                        <>
-                          <td className="px-3 py-3 text-right text-yellow-700 bg-yellow-50/20 text-xs">{formatCurrency(r.probationTotal)}</td>
-                          <td className="px-3 py-3 text-right text-green-700 bg-green-50/20 text-xs">{formatCurrency(r.officialTotal)}</td>
-                          <td className="px-3 py-3 text-right text-slate-600 text-xs">{formatCurrency(r.totalVariableIncome)}</td>
-                        </>
-                      )}
-                      <td className="px-3 py-3 text-right font-semibold text-emerald-700 bg-emerald-50/30">
-                        {formatCurrency(r.grossSalary)}
-                      </td>
-                      <td className="px-3 py-3 text-right text-slate-600 text-xs">{formatCurrency(r.taxableIncome)}</td>
-                      <td className="px-3 py-3 text-right text-red-600 text-xs">{formatCurrency(r.siEmployee)}</td>
-                      <td className="px-3 py-3 text-right text-red-600 text-xs">{formatCurrency(r.pit)}</td>
-                      <td className="px-3 py-3 text-center">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium
+                      {/* ① Ngày công */}
+                      <Td border className="text-center">{r.standardDays}</Td>
+                      <Td className="text-center" highlight={r.probationDays > 0 ? 'yellow' : undefined}>{r.probationDays}</Td>
+                      <Td className="text-center" highlight={r.officialDays > 0 && r.probationDays > 0 ? 'green' : undefined}>{r.officialDays}</Td>
+                      <Td className={`text-center font-semibold ${r.actualDays < r.standardDays ? 'text-amber-600' : 'text-blue-700'}`}>
+                        {r.actualDays}
+                      </Td>
+                      {/* ① Thu nhập prorated */}
+                      <Td border className="text-yellow-700">{fc(r.probationTotal)}</Td>
+                      <Td className="text-green-700">{fc(r.officialTotal)}</Td>
+                      <Td>{fc(r.totalLunchActual)}</Td>
+                      {/* ② Thu nhập khác & Gross */}
+                      <Td border>{fc(r.commission)}</Td>
+                      <Td>{fc(r.bonus)}</Td>
+                      <Td>{fc(r.otherIncome)}</Td>
+                      <Td>{fc(r.otherAllowance)}</Td>
+                      <Td className="font-bold text-emerald-700 bg-emerald-50/30">{fc(r.grossSalary)}</Td>
+                      {/* ③ Thu nhập chịu thuế */}
+                      <Td border className="text-slate-400">{fc(r.nonTaxableLunch)}</Td>
+                      <Td className="text-slate-400">{fc(r.nonTaxablePhone)}</Td>
+                      <Td className="font-semibold">{fc(r.taxableIncome)}</Td>
+                      {/* ④ BH NLĐ & Giảm trừ */}
+                      <Td border className="text-red-600">{fc(r.siEmployee)}</Td>
+                      <Td className="text-slate-500">{fc(r.personalDeduction)}</Td>
+                      <Td className="text-slate-500">{fc(r.dependentDeduction)}</Td>
+                      <Td className="font-semibold">{fc(r.taxAssessableIncome)}</Td>
+                      {/* ⑤ Thuế */}
+                      <Td border>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium
                           ${r.taxMethod === 'progressive' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
                           {r.taxMethod === 'progressive' ? 'LT' : '10%'}
                         </span>
-                      </td>
-                      <td className="px-3 py-3 text-right text-red-600 text-xs font-medium">{formatCurrency(r.totalDeduction)}</td>
-                      <td className="px-3 py-3 text-right font-bold text-blue-700 bg-blue-50/30">
-                        {formatCurrency(r.netSalary)}
-                      </td>
-                      <td className="px-3 py-3 text-center">
+                      </Td>
+                      <Td className="text-red-600 font-semibold">{fc(r.pit)}</Td>
+                      <Td className="text-slate-400">{fc(r.unionFee)}</Td>
+                      {/* ⑥ Khấu trừ & Net */}
+                      <Td border className="text-red-600 font-semibold">{fc(r.totalDeduction)}</Td>
+                      <Td className="text-slate-400">{fc(r.retroDeduction)}</Td>
+                      <Td className="text-slate-400">{fc(r.retroAddition)}</Td>
+                      <Td className="font-bold text-blue-700 bg-blue-50/30">{fc(r.netSalary)}</Td>
+                      {/* ⑦ Chi phí Cty */}
+                      <Td border className="text-blue-600">{fc(r.siEmployerBhxh)}</Td>
+                      <Td className="text-blue-600">{fc(r.siEmployerBhyt)}</Td>
+                      <Td className="text-blue-600">{fc(r.siEmployerBhtn)}</Td>
+                      <Td className="text-slate-500">{fc(r.employerUnionFee)}</Td>
+                      <Td className="font-bold text-slate-800">{fc(r.totalEmployerCost)}</Td>
+                      {/* Detail btn */}
+                      <Td border>
                         <button onClick={() => setDetailRecord(r)}
                           className="p-1 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors">
-                          <Eye size={14} />
+                          <Eye size={13} />
                         </button>
-                      </td>
+                      </Td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="bg-slate-50 font-semibold text-xs">
-                    <td colSpan={showVariableIncome ? 4 : 4} className="px-3 py-3 text-right text-slate-600">TỔNG</td>
-                    {showVariableIncome && (
-                      <>
-                        <td className="px-3 py-3 text-right text-yellow-700">{formatCurrency(currentBatch.records.reduce((s, r) => s + r.probationTotal, 0))}</td>
-                        <td className="px-3 py-3 text-right text-green-700">{formatCurrency(currentBatch.records.reduce((s, r) => s + r.officialTotal, 0))}</td>
-                        <td className="px-3 py-3 text-right">{formatCurrency(currentBatch.records.reduce((s, r) => s + r.totalVariableIncome, 0))}</td>
-                      </>
-                    )}
-                    <td className="px-3 py-3 text-right text-emerald-700 bg-emerald-50/30">{formatCurrency(currentBatch.totalGross)}</td>
-                    <td className="px-3 py-3 text-right">{formatCurrency(currentBatch.records.reduce((s, r) => s + r.taxableIncome, 0))}</td>
-                    <td className="px-3 py-3 text-right text-red-600">{formatCurrency(currentBatch.totalSI)}</td>
-                    <td className="px-3 py-3 text-right text-red-600">{formatCurrency(currentBatch.totalTax)}</td>
-                    <td></td>
-                    <td className="px-3 py-3 text-right text-red-600">{formatCurrency(currentBatch.records.reduce((s, r) => s + r.totalDeduction, 0))}</td>
-                    <td className="px-3 py-3 text-right text-blue-700 bg-blue-50/30">{formatCurrency(currentBatch.totalNet)}</td>
-                    <td></td>
+                  <tr className="bg-slate-50 font-semibold text-[11px] border-t-2 border-slate-200">
+                    <td colSpan={3} className="px-2 py-2.5 text-right text-slate-600 sticky left-0 bg-slate-50 z-10">TỔNG</td>
+                    {/* ① Ngày công — skip */}
+                    <td colSpan={4} className="border-l border-slate-200"></td>
+                    {/* ① prorated */}
+                    <Td border className="text-yellow-700">{fc(sum(r => r.probationTotal))}</Td>
+                    <Td className="text-green-700">{fc(sum(r => r.officialTotal))}</Td>
+                    <Td>{fc(sum(r => r.totalLunchActual))}</Td>
+                    {/* ② */}
+                    <Td border>{fc(sum(r => r.commission))}</Td>
+                    <Td>{fc(sum(r => r.bonus))}</Td>
+                    <Td>{fc(sum(r => r.otherIncome))}</Td>
+                    <Td>{fc(sum(r => r.otherAllowance))}</Td>
+                    <Td className="text-emerald-700 bg-emerald-50/30">{fc(sum(r => r.grossSalary))}</Td>
+                    {/* ③ */}
+                    <Td border>{fc(sum(r => r.nonTaxableLunch))}</Td>
+                    <Td>{fc(sum(r => r.nonTaxablePhone))}</Td>
+                    <Td>{fc(sum(r => r.taxableIncome))}</Td>
+                    {/* ④ */}
+                    <Td border className="text-red-600">{fc(sum(r => r.siEmployee))}</Td>
+                    <Td></Td>
+                    <Td></Td>
+                    <Td>{fc(sum(r => r.taxAssessableIncome))}</Td>
+                    {/* ⑤ */}
+                    <Td border></Td>
+                    <Td className="text-red-600">{fc(sum(r => r.pit))}</Td>
+                    <Td>{fc(sum(r => r.unionFee))}</Td>
+                    {/* ⑥ */}
+                    <Td border className="text-red-600">{fc(sum(r => r.totalDeduction))}</Td>
+                    <Td></Td>
+                    <Td></Td>
+                    <Td className="text-blue-700 bg-blue-50/30">{fc(sum(r => r.netSalary))}</Td>
+                    {/* ⑦ */}
+                    <Td border className="text-blue-600">{fc(sum(r => r.siEmployerBhxh))}</Td>
+                    <Td className="text-blue-600">{fc(sum(r => r.siEmployerBhyt))}</Td>
+                    <Td className="text-blue-600">{fc(sum(r => r.siEmployerBhtn))}</Td>
+                    <Td>{fc(sum(r => r.employerUnionFee))}</Td>
+                    <Td className="text-slate-800">{fc(sum(r => r.totalEmployerCost))}</Td>
+                    <Td border></Td>
                   </tr>
                 </tfoot>
               </table>
@@ -212,17 +301,43 @@ export default function Payroll() {
           <p className="text-sm text-slate-400 mb-6">Nhấn "Tính lương" để hệ thống tự động tính toán theo 7 nhóm logic RULE.md</p>
           <button onClick={handleGenerate}
             className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/25">
-            <Play size={16} />
-            Tính lương tháng {month}/{year}
+            <Play size={16} /> Tính lương tháng {month}/{year}
           </button>
         </div>
       )}
 
-      {/* Detail Modal */}
       {detailRecord && (
         <PayrollDetailModal record={detailRecord} onClose={() => setDetailRecord(null)} />
       )}
     </div>
+  );
+}
+
+// ── Reusable table header cell ──
+function Th({
+  children, border, bg, className = '',
+}: {
+  children?: React.ReactNode; border?: boolean; bg?: string; className?: string;
+}) {
+  return (
+    <th className={`px-2 py-2 font-medium text-right ${border ? 'border-l border-slate-200' : ''} ${bg ?? ''} ${className}`}>
+      {children}
+    </th>
+  );
+}
+
+// ── Reusable table data cell ──
+function Td({
+  children, border, className = '', highlight,
+}: {
+  children?: React.ReactNode; border?: boolean; className?: string; highlight?: 'yellow' | 'green';
+}) {
+  const hlClass = highlight === 'yellow' ? 'bg-yellow-50 text-yellow-700 font-medium'
+    : highlight === 'green' ? 'bg-green-50 text-green-700 font-medium' : '';
+  return (
+    <td className={`px-2 py-2 text-right ${border ? 'border-l border-slate-100' : ''} ${hlClass} ${className}`}>
+      {children}
+    </td>
   );
 }
 
@@ -236,6 +351,7 @@ function SummaryCard({ label, value, sub }: { label: string; value: string; sub:
   );
 }
 
+// ── Detail modal (7 groups) — kept from previous version ──
 function PayrollDetailModal({ record: r, onClose }: { record: PayrollRecord; onClose: () => void }) {
   const hasTwoPhase = r.probationDays > 0 && r.officialDays > 0;
 
@@ -251,7 +367,6 @@ function PayrollDetailModal({ record: r, onClose }: { record: PayrollRecord; onC
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-100"><X size={18} /></button>
         </div>
         <div className="p-6 space-y-5">
-          {/* Status */}
           <div className="flex items-center gap-3">
             <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${EMPLOYEE_STATUS_COLORS[r.status]}`}>
               {EMPLOYEE_STATUS_LABELS[r.status]}
@@ -268,7 +383,6 @@ function PayrollDetailModal({ record: r, onClose }: { record: PayrollRecord; onC
             </span>
           </div>
 
-          {/* ═══ NHÓM 1: THU NHẬP THEO NGÀY CÔNG ═══ */}
           <Section title="NHÓM 1 — THU NHẬP THEO NGÀY CÔNG (PRORATED)" color="emerald" num="1">
             <p className="text-[10px] text-slate-400 mb-2 italic">
               Công thức: (Khoản trong gói HĐ / {r.standardDays} ngày chuẩn) × Số ngày thực tế
@@ -303,7 +417,6 @@ function PayrollDetailModal({ record: r, onClose }: { record: PayrollRecord; onC
             )}
           </Section>
 
-          {/* ═══ NHÓM 2: THU NHẬP KHÁC & GROSS ═══ */}
           <Section title="NHÓM 2 — THU NHẬP KHÁC & TỔNG THU NHẬP" color="emerald" num="2">
             <DetailRow label="Hoa hồng" value={r.commission} />
             <DetailRow label="Thưởng khác" value={r.bonus} />
@@ -314,7 +427,6 @@ function PayrollDetailModal({ record: r, onClose }: { record: PayrollRecord; onC
               className="border-t-2 border-emerald-300 pt-2 mt-2 text-emerald-700" />
           </Section>
 
-          {/* ═══ NHÓM 3: THU NHẬP CHỊU THUẾ ═══ */}
           <Section title="NHÓM 3 — THU NHẬP CHỊU THUẾ" color="amber" num="3">
             <DetailRow label="Tổng thu nhập (Gross)" value={r.grossSalary} />
             <DetailRow label="(−) Trợ cấp ăn trưa (không chịu thuế)" value={-r.nonTaxableLunch} />
@@ -323,7 +435,6 @@ function PayrollDetailModal({ record: r, onClose }: { record: PayrollRecord; onC
               className="border-t border-amber-300 pt-1 mt-1" />
           </Section>
 
-          {/* ═══ NHÓM 4+5: GIẢM TRỪ & THUẾ ═══ */}
           <Section title={`NHÓM 4+5 — GIẢM TRỪ & THUẾ TNCN (${r.taxMethod === 'progressive' ? 'Lũy tiến' : 'Flat 10%'})`} color="rose" num="4–5">
             {r.taxMethod === 'progressive' ? (
               <>
@@ -337,17 +448,14 @@ function PayrollDetailModal({ record: r, onClose }: { record: PayrollRecord; onC
             ) : (
               <>
                 <DetailRow label="Thu nhập tính thuế = Thu nhập chịu thuế" value={r.taxAssessableIncome} />
-                <p className="text-[10px] text-slate-400 italic">
-                  Không trừ giảm trừ gia cảnh hay bảo hiểm (RULE.md mục 5 — TH2)
-                </p>
+                <p className="text-[10px] text-slate-400 italic">Flat 10% — Không trừ giảm trừ gia cảnh hay bảo hiểm</p>
                 <DetailRow label="→ Thuế TNCN (10% flat)" value={-r.pit} bold className="text-red-600 mt-1" />
               </>
             )}
           </Section>
 
-          {/* ═══ NHÓM 6: KHẤU TRỪ & NET ═══ */}
           <Section title="NHÓM 6 — KHẤU TRỪ THỰC TẾ & THỰC LĨNH" color="blue" num="6">
-            <p className="text-[10px] text-slate-500 mb-1.5">Khoản trừ vào lương = Thuế + BH 10.5% + Truy thu</p>
+            <p className="text-[10px] text-slate-500 mb-1.5">Khoản trừ = Thuế + BH 10.5% + Truy thu</p>
             <DetailRow label="Thuế TNCN" value={-r.pit} />
             <div className="ml-4 space-y-1 text-xs">
               <DetailRow label="BHXH NLĐ (8%)" value={-r.siBhxh} />
@@ -357,17 +465,14 @@ function PayrollDetailModal({ record: r, onClose }: { record: PayrollRecord; onC
             <DetailRow label="Cộng BH bắt buộc NLĐ (10.5%)" value={-r.siEmployee} bold />
             {r.retroDeduction > 0 && <DetailRow label="Truy thu sau thuế" value={-r.retroDeduction} />}
             <DetailRow label="TỔNG KHẤU TRỪ" value={-r.totalDeduction} bold className="border-t border-slate-300 pt-1 mt-1 text-red-600" />
-
             <div className="bg-slate-50 rounded-lg p-2 mt-2 text-xs">
               <DetailRow label="Đoàn phí 2% (Cty đóng thay)" value={r.unionFee}
                 sub="Hiển thị trên BL nhưng KHÔNG trừ vào lương NLĐ" />
             </div>
-
             {r.retroAddition > 0 && <DetailRow label="(+) Cộng thêm sau thuế" value={r.retroAddition} />}
           </Section>
 
-          {/* NET */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-5 text-white">
+          <div className="bg-linear-to-r from-blue-600 to-blue-700 rounded-2xl p-5 text-white">
             <p className="text-sm font-medium text-blue-200">THỰC LĨNH (NET SALARY)</p>
             <p className="text-3xl font-bold mt-1">{formatCurrency(r.netSalary)} VNĐ</p>
             <p className="text-xs text-blue-300 mt-2">
@@ -376,11 +481,8 @@ function PayrollDetailModal({ record: r, onClose }: { record: PayrollRecord; onC
             </p>
           </div>
 
-          {/* ═══ NHÓM 7: CHI PHÍ CÔNG TY ═══ */}
           <Section title="NHÓM 7 — CHI PHÍ CÔNG TY TRẢ" color="slate" num="7">
-            <p className="text-[10px] text-slate-400 italic mb-1.5">
-              Không hiển thị trên phiếu lương NV — dùng cho dữ liệu tài chính
-            </p>
+            <p className="text-[10px] text-slate-400 italic mb-1.5">Không hiển thị trên phiếu lương NV</p>
             <DetailRow label="Lương thực lĩnh NV" value={r.netSalary} />
             <DetailRow label="BHXH Cty (17.5%)" value={r.siEmployerBhxh} />
             <DetailRow label="BHYT Cty (3%)" value={r.siEmployerBhyt} />
@@ -398,11 +500,8 @@ function PayrollDetailModal({ record: r, onClose }: { record: PayrollRecord; onC
 
 function Section({ title, color, num, children }: { title: string; color: string; num: string; children: React.ReactNode }) {
   const borderColor: Record<string, string> = {
-    emerald: 'border-l-emerald-500',
-    amber: 'border-l-amber-500',
-    rose: 'border-l-rose-500',
-    blue: 'border-l-blue-500',
-    slate: 'border-l-slate-400',
+    emerald: 'border-l-emerald-500', amber: 'border-l-amber-500',
+    rose: 'border-l-rose-500', blue: 'border-l-blue-500', slate: 'border-l-slate-400',
   };
   return (
     <div className={`border-l-4 ${borderColor[color] || 'border-l-blue-500'} pl-4 space-y-1.5`}>
@@ -423,7 +522,7 @@ function DetailRow({
   return (
     <div className={`flex items-center justify-between text-sm ${className}`}>
       <div>
-        <span className={`${bold ? 'font-semibold text-slate-800' : 'text-slate-600'}`}>{label}</span>
+        <span className={bold ? 'font-semibold text-slate-800' : 'text-slate-600'}>{label}</span>
         {sub && <p className="text-[10px] text-slate-400">{sub}</p>}
       </div>
       <span className={`${bold ? 'font-bold text-slate-800' : 'font-medium text-slate-700'} ${value < 0 ? 'text-red-600' : ''}`}>
