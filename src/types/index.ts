@@ -36,6 +36,12 @@ export interface Employee {
   department: string;
   position: string;
   level: string;
+  // Phân cấp cơ cấu tổ chức (Level 1 → Level 5)
+  orgLevel1: string;       // Công ty
+  orgLevel2: string;       // Khối
+  orgLevel3: string;       // Phòng/Ban
+  orgLevel4: string;       // Bộ phận
+  orgLevel5: string;       // Nhóm
   status: EmployeeStatus;
   onboardDate: string;     // Ngày bắt đầu thử việc
   officialDate: string;    // Ngày chính thức
