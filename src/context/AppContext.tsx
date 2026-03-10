@@ -14,6 +14,7 @@ import {
   mockTimekeeping,
   mockSocialInsurance,
   mockVariableIncomes,
+  mockPayrollBatches,
   defaultGrossPackage,
   employeePackageOverrides,
 } from '../data/mockData';
@@ -60,7 +61,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [variableIncomes, setVariableIncomes] = useState<VariableIncome[]>(mockVariableIncomes);
   const [grossPackage, setGrossPackage] = useState<GrossPackage>(defaultGrossPackage);
   const [packageOverrides, setPackageOverrides] = useState<Record<string, Partial<GrossPackage>>>(employeePackageOverrides);
-  const [payrollBatches, setPayrollBatches] = useState<PayrollBatch[]>([]);
+  const [payrollBatches, setPayrollBatches] = useState<PayrollBatch[]>(mockPayrollBatches);
   const [emailsSent, setEmailsSent] = useState<Record<string, boolean>>({});
 
   const generatePayroll = useCallback((month: number, year: number): PayrollBatch => {

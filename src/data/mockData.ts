@@ -1,9 +1,11 @@
 import {
   Employee, Timekeeping, SocialInsurance, VariableIncome, GrossPackage,
+  PayrollBatch, PayrollRecord,
   SI_BHXH_RATE, SI_BHYT_RATE, SI_BHTN_RATE, SI_RATE_EMPLOYEE,
   SI_BHXH_EMPLOYER_RATE, SI_BHYT_EMPLOYER_RATE, SI_BHTN_EMPLOYER_RATE, SI_RATE_EMPLOYER,
   UNION_FEE_RATE, SI_MIN_BASE,
 } from '../types';
+import { calculatePayrollRecord } from '../utils/payrollCalculator';
 
 // ═══ GÓI THU NHẬP THEO HỢP ĐỒNG (mặc định) ═══
 // Mỗi khoản sẽ được prorate theo (khoản / công chuẩn) * số ngày thực tế
@@ -286,3 +288,130 @@ export const mockVariableIncomes: VariableIncome[] = [
   { employeeId: 'EMP009', month: 2, year: 2026, commission: 0, bonus: 500_000, otherIncome: 200_000, otherAllowance: 0 },
   { employeeId: 'EMP010', month: 2, year: 2026, commission: 10_000_000, bonus: 5_000_000, otherIncome: 0, otherAllowance: 2_000_000 },
 ];
+
+// ═══ MOCK PAYROLL BATCHES (5 tháng: T10/2025 → T2/2026) ═══
+// Sử dụng calculatePayrollRecord thực tế để đảm bảo con số nhất quán
+
+const MOCK_MONTHS: { month: number; year: number }[] = [
+  { month: 10, year: 2025 },
+  { month: 11, year: 2025 },
+  { month: 12, year: 2025 },
+  { month: 1,  year: 2026 },
+  { month: 2,  year: 2026 },
+];
+
+const VARIABLE_MULTIPLIERS: Record<number, number> = {
+  10: 0.8,
+  11: 0.9,
+  12: 1.5, // Tháng 12 thưởng cuối năm
+  1:  0.7,
+  2:  1.0,
+};
+
+function buildSIForEmployee(emp: Employee, month: number, year: number): SocialInsurance {
+  const siBase = Math.max(emp.baseSalary * 0.5, SI_MIN_BASE);
+  const isExempt = emp.status === 'thai_san' || emp.status === 'thu_viec';
+
+  const calc = (base: number) => ({
+    baseSI: base,
+    bhxh:         Math.round(base * SI_BHXH_RATE),
+    bhyt:         Math.round(base * SI_BHYT_RATE),
+    bhtn:         Math.round(base * SI_BHTN_RATE),
+    siEmployee:   Math.round(base * SI_RATE_EMPLOYEE),
+    bhxhEmployer: Math.round(base * SI_BHXH_EMPLOYER_RATE),
+    bhytEmployer: Math.round(base * SI_BHYT_EMPLOYER_RATE),
+    bhtnEmployer: Math.round(base * SI_BHTN_EMPLOYER_RATE),
+    siEmployer:   Math.round(base * SI_RATE_EMPLOYER),
+    unionFee:     Math.round(base * UNION_FEE_RATE),
+  });
+
+  const data = isExempt ? calc(0) : calc(siBase);
+  return {
+    employeeId: emp.id, month, year,
+    ...data,
+    isExempt,
+    note: emp.status === 'thai_san' ? 'Thai sản' : emp.status === 'thu_viec' ? 'Thử việc' : '',
+  };
+}
+
+function buildTimekeepingForMonth(emp: Employee, month: number, year: number): Timekeeping {
+  const std = [10, 12].includes(month) ? 22 : 20;
+
+  if (emp.status === 'thai_san') {
+    return { employeeId: emp.id, month, year, standardDays: std, actualDays: 0, probationDays: 0, officialDays: 0, remainingLeave: 3, unpaidLeave: 0 };
+  }
+  if (emp.status === 'nghi_viec_tv') {
+    return { employeeId: emp.id, month, year, standardDays: std, actualDays: 3, probationDays: 3, officialDays: 0, remainingLeave: 0, unpaidLeave: 0 };
+  }
+  if (emp.status === 'nghi_viec_ct') {
+    return { employeeId: emp.id, month, year, standardDays: std, actualDays: 10, probationDays: 0, officialDays: 10, remainingLeave: 1, unpaidLeave: 0 };
+  }
+
+  // het_thu_viec: chỉ tháng 2/2026 mới split, các tháng trước là thử việc thuần
+  if (emp.status === 'het_thu_viec') {
+    if (month === 2 && year === 2026) {
+      return { employeeId: emp.id, month, year, standardDays: std, actualDays: 20, probationDays: 7, officialDays: 13, remainingLeave: 0, unpaidLeave: 0 };
+    }
+    return { employeeId: emp.id, month, year, standardDays: std, actualDays: std, probationDays: std, officialDays: 0, remainingLeave: 0, unpaidLeave: 0 };
+  }
+
+  if (emp.status === 'thu_viec') {
+    return { employeeId: emp.id, month, year, standardDays: std, actualDays: std - 2, probationDays: std - 2, officialDays: 0, remainingLeave: 0, unpaidLeave: 2 };
+  }
+
+  // chinh_thuc
+  return { employeeId: emp.id, month, year, standardDays: std, actualDays: std, probationDays: 0, officialDays: std, remainingLeave: 3, unpaidLeave: 0 };
+}
+
+function buildVariableForMonth(emp: Employee, month: number, year: number): VariableIncome {
+  const orig = mockVariableIncomes.find(v => v.employeeId === emp.id);
+  const mult = VARIABLE_MULTIPLIERS[month] ?? 1;
+  if (!orig) {
+    return { employeeId: emp.id, month, year, commission: 0, bonus: 0, otherIncome: 0, otherAllowance: 0 };
+  }
+  return {
+    employeeId: emp.id, month, year,
+    commission:     Math.round(orig.commission * mult),
+    bonus:          Math.round(orig.bonus * mult),
+    otherIncome:    Math.round(orig.otherIncome * mult),
+    otherAllowance: Math.round(orig.otherAllowance * mult),
+  };
+}
+
+function generateMockBatches(): PayrollBatch[] {
+  return MOCK_MONTHS.map(({ month, year }) => {
+    const records: PayrollRecord[] = mockEmployees.map((emp) => {
+      const tk = buildTimekeepingForMonth(emp, month, year);
+      const si = buildSIForEmployee(emp, month, year);
+      const vi = buildVariableForMonth(emp, month, year);
+
+      const empPkg: GrossPackage = {
+        ...defaultGrossPackage,
+        baseSalary: emp.baseSalary,
+        ...(employeePackageOverrides[emp.id] || {}),
+      };
+
+      return calculatePayrollRecord(emp, tk, si, vi, empPkg);
+    });
+
+    return {
+      id: `BATCH-${month}-${year}`,
+      month,
+      year,
+      status: month === 2 && year === 2026 ? 'draft' : 'approved',
+      createdBy: 'Nguyễn Thị Hiền',
+      createdAt: new Date(year, month - 1, 25).toISOString(),
+      approvedBy: month === 2 && year === 2026 ? undefined : 'Trần Thị Nguyệt',
+      approvedAt: month === 2 && year === 2026 ? undefined : new Date(year, month - 1, 27).toISOString(),
+      totalEmployees: records.length,
+      totalGross: records.reduce((s, r) => s + r.grossSalary, 0),
+      totalNet: records.reduce((s, r) => s + r.netSalary, 0),
+      totalTax: records.reduce((s, r) => s + r.pit, 0),
+      totalSI: records.reduce((s, r) => s + r.siEmployee, 0),
+      totalEmployerCost: records.reduce((s, r) => s + r.totalEmployerCost, 0),
+      records,
+    } satisfies PayrollBatch;
+  });
+}
+
+export const mockPayrollBatches: PayrollBatch[] = generateMockBatches();
