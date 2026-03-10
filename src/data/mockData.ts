@@ -146,7 +146,7 @@ export const mockEmployees: Employee[] = [
     status: 'nghi_viec_ct',
     onboardDate: '2023-04-01',
     officialDate: '2023-06-01',
-    lastWorkingDate: '2026-02-15',
+    lastWorkingDate: '2026-02-03',
     dependents: 0,
     baseSalary: 18_000_000,
   },
@@ -269,8 +269,8 @@ export const mockTimekeeping: Timekeeping[] = mockEmployees.map((emp) => {
     case 'thu_viec':
       return { ...base, actualDays: 18, probationDays: 18, officialDays: 0 };
     case 'nghi_viec_ct':
-      // Nghỉ 15/2 → 10 ngày chính thức
-      return { ...base, actualDays: 10, probationDays: 0, officialDays: 10 };
+      // Nghỉ 3/2 → 3 ngày CT, 17 ngày không lương (>14 → chỉ đóng BHYT)
+      return { ...base, actualDays: 3, probationDays: 0, officialDays: 3, unpaidLeave: 17 };
     case 'nghi_viec_tv':
       // Nghỉ 5/2 → 3 ngày thử việc
       return { ...base, actualDays: 3, probationDays: 3, officialDays: 0 };
@@ -283,46 +283,10 @@ export const mockTimekeeping: Timekeeping[] = mockEmployees.map((emp) => {
 });
 
 // ═══ BẢO HIỂM XÃ HỘI ═══
+// Sử dụng buildSIForEmployee (khai báo bên dưới) với unpaidLeave từ timekeeping
 export const mockSocialInsurance: SocialInsurance[] = mockEmployees.map((emp) => {
-  const siBase = Math.max(emp.baseSalary * 0.5, SI_MIN_BASE);
-  const isExempt = emp.status === 'thai_san';
-
-  // Tính chi tiết BH
-  const calcSI = (base: number) => ({
-    baseSI: base,
-    bhxh:         Math.round(base * SI_BHXH_RATE),
-    bhyt:         Math.round(base * SI_BHYT_RATE),
-    bhtn:         Math.round(base * SI_BHTN_RATE),
-    siEmployee:   Math.round(base * SI_RATE_EMPLOYEE),
-    bhxhEmployer: Math.round(base * SI_BHXH_EMPLOYER_RATE),
-    bhytEmployer: Math.round(base * SI_BHYT_EMPLOYER_RATE),
-    bhtnEmployer: Math.round(base * SI_BHTN_EMPLOYER_RATE),
-    siEmployer:   Math.round(base * SI_RATE_EMPLOYER),
-    unionFee:     Math.round(base * UNION_FEE_RATE),
-  });
-
-  const zero = calcSI(0);
-  const filled = calcSI(siBase);
-
-  if (isExempt) {
-    return {
-      employeeId: emp.id, month: 2, year: 2026,
-      ...zero, isExempt: true, note: 'Thai sản - Miễn đóng BHXH',
-    };
-  }
-
-  if (emp.status === 'thu_viec') {
-    // Thử việc thuần: chưa pass → chưa đóng BH
-    return {
-      employeeId: emp.id, month: 2, year: 2026,
-      ...zero, isExempt: true, note: 'Đang thử việc - Chưa đóng BHXH',
-    };
-  }
-
-  return {
-    employeeId: emp.id, month: 2, year: 2026,
-    ...filled, isExempt: false, note: '',
-  };
+  const tk = mockTimekeeping.find(t => t.employeeId === emp.id);
+  return buildSIForEmployee(emp, 2, 2026, tk?.unpaidLeave ?? 0);
 });
 
 // ═══ THU NHẬP KHÁC (nhập tay) ═══
@@ -358,29 +322,51 @@ const VARIABLE_MULTIPLIERS: Record<number, number> = {
   2:  1.0,
 };
 
-function buildSIForEmployee(emp: Employee, month: number, year: number): SocialInsurance {
+function buildSIForEmployee(emp: Employee, month: number, year: number, unpaidLeave: number = 0): SocialInsurance {
   const siBase = Math.max(emp.baseSalary * 0.5, SI_MIN_BASE);
-  const isExempt = emp.status === 'thai_san' || emp.status === 'thu_viec';
+  const isExempt = emp.status === 'thai_san' || emp.status === 'thu_viec' || emp.status === 'nghi_viec_tv';
 
-  const calc = (base: number) => ({
-    baseSI: base,
-    bhxh:         Math.round(base * SI_BHXH_RATE),
-    bhyt:         Math.round(base * SI_BHYT_RATE),
-    bhtn:         Math.round(base * SI_BHTN_RATE),
-    siEmployee:   Math.round(base * SI_RATE_EMPLOYEE),
-    bhxhEmployer: Math.round(base * SI_BHXH_EMPLOYER_RATE),
-    bhytEmployer: Math.round(base * SI_BHYT_EMPLOYER_RATE),
-    bhtnEmployer: Math.round(base * SI_BHTN_EMPLOYER_RATE),
-    siEmployer:   Math.round(base * SI_RATE_EMPLOYER),
-    unionFee:     Math.round(base * UNION_FEE_RATE),
-  });
+  const zero = {
+    baseSI: 0, bhxh: 0, bhyt: 0, bhtn: 0, siEmployee: 0,
+    bhxhEmployer: 0, bhytEmployer: 0, bhtnEmployer: 0, siEmployer: 0, unionFee: 0,
+  };
 
-  const data = isExempt ? calc(0) : calc(siBase);
+  if (isExempt) {
+    const note = emp.status === 'thai_san' ? 'Thai sản - Miễn đóng'
+      : emp.status === 'thu_viec' ? 'Thử việc - Chưa đóng'
+      : 'Nghỉ việc TV - Không đóng';
+    return { employeeId: emp.id, month, year, ...zero, isExempt: true, note };
+  }
+
+  // Nghỉ việc CT: >14 ngày không lương → chỉ đóng BHYT
+  if (emp.status === 'nghi_viec_ct' && unpaidLeave > 14) {
+    const bhytEmp = Math.round(siBase * SI_BHYT_RATE);
+    const bhytEr  = Math.round(siBase * SI_BHYT_EMPLOYER_RATE);
+    return {
+      employeeId: emp.id, month, year,
+      baseSI: siBase,
+      bhxh: 0, bhyt: bhytEmp, bhtn: 0, siEmployee: bhytEmp,
+      bhxhEmployer: 0, bhytEmployer: bhytEr, bhtnEmployer: 0, siEmployer: bhytEr,
+      unionFee: 0,
+      isExempt: false,
+      note: 'Nghỉ việc >14 ngày KL → chỉ BHYT',
+    };
+  }
+
   return {
     employeeId: emp.id, month, year,
-    ...data,
-    isExempt,
-    note: emp.status === 'thai_san' ? 'Thai sản' : emp.status === 'thu_viec' ? 'Thử việc' : '',
+    baseSI: siBase,
+    bhxh:         Math.round(siBase * SI_BHXH_RATE),
+    bhyt:         Math.round(siBase * SI_BHYT_RATE),
+    bhtn:         Math.round(siBase * SI_BHTN_RATE),
+    siEmployee:   Math.round(siBase * SI_RATE_EMPLOYEE),
+    bhxhEmployer: Math.round(siBase * SI_BHXH_EMPLOYER_RATE),
+    bhytEmployer: Math.round(siBase * SI_BHYT_EMPLOYER_RATE),
+    bhtnEmployer: Math.round(siBase * SI_BHTN_EMPLOYER_RATE),
+    siEmployer:   Math.round(siBase * SI_RATE_EMPLOYER),
+    unionFee:     Math.round(siBase * UNION_FEE_RATE),
+    isExempt: false,
+    note: '',
   };
 }
 
@@ -394,7 +380,7 @@ function buildTimekeepingForMonth(emp: Employee, month: number, year: number): T
     return { employeeId: emp.id, month, year, standardDays: std, actualDays: 3, probationDays: 3, officialDays: 0, remainingLeave: 0, unpaidLeave: 0 };
   }
   if (emp.status === 'nghi_viec_ct') {
-    return { employeeId: emp.id, month, year, standardDays: std, actualDays: 10, probationDays: 0, officialDays: 10, remainingLeave: 1, unpaidLeave: 0 };
+    return { employeeId: emp.id, month, year, standardDays: std, actualDays: 3, probationDays: 0, officialDays: 3, remainingLeave: 0, unpaidLeave: 17 };
   }
 
   // het_thu_viec: chỉ tháng 2/2026 mới split, các tháng trước là thử việc thuần
@@ -432,7 +418,7 @@ function generateMockBatches(): PayrollBatch[] {
   return MOCK_MONTHS.map(({ month, year }) => {
     const records: PayrollRecord[] = mockEmployees.map((emp) => {
       const tk = buildTimekeepingForMonth(emp, month, year);
-      const si = buildSIForEmployee(emp, month, year);
+      const si = buildSIForEmployee(emp, month, year, tk.unpaidLeave);
       const vi = buildVariableForMonth(emp, month, year);
 
       const empPkg: GrossPackage = {
