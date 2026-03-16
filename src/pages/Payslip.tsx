@@ -213,14 +213,7 @@ function PayslipPreview({ record: r, onClose }: { record: PayrollRecord; onClose
               Thu nhập
             </h3>
             <div className="space-y-1.5 text-sm">
-              {r.probationDays > 0 && r.officialDays > 0 ? (
-                <>
-                  <PayslipRow label={`Thu nhập giai đoạn TV (${r.probationDays} ngày)`} value={r.probationTotal} />
-                  <PayslipRow label={`Thu nhập giai đoạn CT (${r.officialDays} ngày)`} value={r.officialTotal} />
-                </>
-              ) : (
-                <PayslipRow label={`Thu nhập theo ngày công (${r.actualDays}/${r.standardDays})`} value={r.probationTotal + r.officialTotal} />
-              )}
+              <PayslipRow label={`Thu nhập theo ngày công (${r.actualDays}/${r.standardDays})`} value={r.proratedTotal} />
               {r.totalVariableIncome > 0 && (
                 <PayslipRow label="Thu nhập khác (HH, thưởng, TC)" value={r.totalVariableIncome} />
               )}

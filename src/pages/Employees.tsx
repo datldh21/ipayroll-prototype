@@ -31,7 +31,7 @@ const ORG_LEVEL_LABELS = ['Level 1 (Công ty)', 'Level 2 (Khối)', 'Level 3 (Ph
 const ORG_LEVEL_KEYS: (keyof Employee)[] = ['orgLevel1', 'orgLevel2', 'orgLevel3', 'orgLevel4', 'orgLevel5'];
 
 export default function Employees() {
-  const { employees, setEmployees, grossPackage, packageOverrides } = useApp();
+  const { employees, setEmployees, grossPackage } = useApp();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterDept, setFilterDept] = useState<string>('all');
@@ -56,14 +56,11 @@ export default function Employees() {
     return matchSearch && matchStatus && matchDept && matchLevel2;
   }), [employees, search, filterStatus, filterDept, filterLevel2]);
 
-  // ── Helpers to get allowance data from gross package ──
-  const getLunch = (empId: string) => {
-    const ov = packageOverrides[empId];
-    return ov?.lunch ?? grossPackage.lunch;
-  };
+  const getLunch = (_empId: string) => grossPackage.lunch;
   const getPerfBonus = (empId: string) => {
-    const ov = packageOverrides[empId];
-    return ov?.performanceBonus ?? grossPackage.performanceBonus;
+    const emp = employees.find(e => e.id === empId);
+    const base = emp?.baseSalary ?? 0;
+    return base - grossPackage.lunch - grossPackage.phone;
   };
 
   // ── CRUD ──
@@ -156,6 +153,7 @@ export default function Employees() {
         lastWorkingDate: String(row['Ngày nghỉ việc'] || ''),
         dependents:      Number(row['Người phụ thuộc'] || 0),
         baseSalary:      Number(row['Lương cơ bản'] || 0),
+        costAccount:     String(row['TK chi phí'] || '6421'),
       }));
 
       setEmployees(prev => {
@@ -534,6 +532,7 @@ function EmployeeFormModal({
       lastWorkingDate: '',
       dependents: 0,
       baseSalary: 0,
+      costAccount: '6421',
     }
   );
 

@@ -113,7 +113,7 @@ export default function Dashboard() {
   const COST_COLORS = ['#3b82f6', '#a855f7', '#f97316', '#22c55e', '#eab308'];
   const costStructureData = latestBatch ? (() => {
     const recs = latestBatch.records;
-    const luong  = recs.reduce((s, r) => s + r.officialBaseSalary + r.probationBaseSalary, 0);
+    const luong  = recs.reduce((s, r) => s + r.proratedBaseSalary, 0);
     const bhxh   = recs.reduce((s, r) => s + r.siBhxh, 0);
     const trocap = recs.reduce((s, r) => s + r.totalLunchActual + r.totalPhoneActual + r.otherAllowance, 0);
     const thuong = recs.reduce((s, r) => s + r.bonus + r.commission, 0);

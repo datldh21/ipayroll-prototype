@@ -8,13 +8,11 @@ import {
 import { calculatePayrollRecord } from '../utils/payrollCalculator';
 
 // ═══ GÓI THU NHẬP THEO HỢP ĐỒNG (mặc định) ═══
-// Mỗi khoản sẽ được prorate theo (khoản / công chuẩn) * số ngày thực tế
+// Thưởng HQCV tự tính: HĐTV = base - lunch, HĐLĐ = base - lunch - phone
 export const defaultGrossPackage: GrossPackage = {
   baseSalary: 0,            // Sẽ lấy từ Employee.baseSalary
   lunch: 730_000,           // Trợ cấp ăn trưa
   phone: 500_000,           // Hỗ trợ điện thoại
-  performanceBonus: 0,      // Thưởng hiệu quả CV (cấu hình theo NV)
-  otherPackage: 0,          // Trợ cấp khác trong gói HĐ
 };
 
 export const mockEmployees: Employee[] = [
@@ -39,6 +37,7 @@ export const mockEmployees: Employee[] = [
     lastWorkingDate: '',
     dependents: 2,
     baseSalary: 25_000_000,
+    costAccount: '6421',
   },
   {
     id: 'EMP002',
@@ -61,6 +60,7 @@ export const mockEmployees: Employee[] = [
     lastWorkingDate: '',
     dependents: 1,
     baseSalary: 35_000_000,
+    costAccount: '6421',
   },
   {
     id: 'EMP003',
@@ -83,6 +83,7 @@ export const mockEmployees: Employee[] = [
     lastWorkingDate: '',
     dependents: 0,
     baseSalary: 15_000_000,
+    costAccount: '6422',
   },
   {
     id: 'EMP004',
@@ -105,6 +106,7 @@ export const mockEmployees: Employee[] = [
     lastWorkingDate: '',
     dependents: 0,
     baseSalary: 20_000_000,
+    costAccount: '6422',
   },
   {
     id: 'EMP005',
@@ -127,6 +129,7 @@ export const mockEmployees: Employee[] = [
     lastWorkingDate: '',
     dependents: 1,
     baseSalary: 22_000_000,
+    costAccount: '6423',
   },
   {
     id: 'EMP006',
@@ -149,6 +152,7 @@ export const mockEmployees: Employee[] = [
     lastWorkingDate: '2026-02-03',
     dependents: 0,
     baseSalary: 18_000_000,
+    costAccount: '6421',
   },
   {
     id: 'EMP007',
@@ -171,6 +175,7 @@ export const mockEmployees: Employee[] = [
     lastWorkingDate: '',
     dependents: 2,
     baseSalary: 28_000_000,
+    costAccount: '6424',
   },
   {
     id: 'EMP008',
@@ -193,6 +198,7 @@ export const mockEmployees: Employee[] = [
     lastWorkingDate: '2026-02-05',
     dependents: 0,
     baseSalary: 12_000_000,
+    costAccount: '6422',
   },
   {
     id: 'EMP009',
@@ -215,6 +221,7 @@ export const mockEmployees: Employee[] = [
     lastWorkingDate: '',
     dependents: 0,
     baseSalary: 16_000_000,
+    costAccount: '6421',
   },
   {
     id: 'EMP010',
@@ -237,18 +244,10 @@ export const mockEmployees: Employee[] = [
     lastWorkingDate: '',
     dependents: 3,
     baseSalary: 50_000_000,
+    costAccount: '6421',
   },
 ];
 
-// ═══ Gói thưởng hiệu quả CV theo nhân viên (nếu có) ═══
-export const employeePackageOverrides: Record<string, Partial<GrossPackage>> = {
-  'EMP001': { performanceBonus: 3_000_000 },
-  'EMP002': { performanceBonus: 5_000_000 },
-  'EMP004': { performanceBonus: 2_000_000 },
-  'EMP007': { performanceBonus: 3_500_000 },
-  'EMP009': { performanceBonus: 1_500_000 },
-  'EMP010': { performanceBonus: 8_000_000 },
-};
 
 // ═══ CHẤM CÔNG ═══
 // Với het_thu_viec: chia ngày công thành 2 giai đoạn (Thử việc + Chính thức)
@@ -260,24 +259,22 @@ export const mockTimekeeping: Timekeeping[] = mockEmployees.map((emp) => {
     standardDays: 20,
     remainingLeave: emp.status === 'thu_viec' || emp.status === 'nghi_viec_tv' ? 0 : 3,
     unpaidLeave: emp.status === 'thu_viec' ? 2 : 0,
+    unpaidLeaveProbation: 0,
+    unpaidLeaveOfficial: 0,
   };
 
   switch (emp.status) {
     case 'het_thu_viec':
-      // EMP004: Chính thức từ 10/2 → 7 ngày TV + 13 ngày CT = 20 ngày
       return { ...base, actualDays: 20, probationDays: 7, officialDays: 13 };
     case 'thu_viec':
-      return { ...base, actualDays: 18, probationDays: 18, officialDays: 0 };
+      return { ...base, actualDays: 18, probationDays: 18, officialDays: 0, unpaidLeaveProbation: 2, unpaidLeaveOfficial: 0 };
     case 'nghi_viec_ct':
-      // Nghỉ 3/2 → 3 ngày CT, 17 ngày không lương (>14 → chỉ đóng BHYT)
-      return { ...base, actualDays: 3, probationDays: 0, officialDays: 3, unpaidLeave: 17 };
+      return { ...base, actualDays: 3, probationDays: 0, officialDays: 3, unpaidLeave: 17, unpaidLeaveProbation: 0, unpaidLeaveOfficial: 17 };
     case 'nghi_viec_tv':
-      // Nghỉ 5/2 → 3 ngày thử việc
       return { ...base, actualDays: 3, probationDays: 3, officialDays: 0 };
     case 'thai_san':
       return { ...base, actualDays: 0, probationDays: 0, officialDays: 0 };
     default:
-      // Chính thức thuần
       return { ...base, actualDays: 20, probationDays: 0, officialDays: 20 };
   }
 });
@@ -291,16 +288,16 @@ export const mockSocialInsurance: SocialInsurance[] = mockEmployees.map((emp) =>
 
 // ═══ THU NHẬP KHÁC (nhập tay) ═══
 export const mockVariableIncomes: VariableIncome[] = [
-  { employeeId: 'EMP001', month: 2, year: 2026, commission: 5_000_000, bonus: 2_000_000, otherIncome: 0, otherAllowance: 1_000_000 },
-  { employeeId: 'EMP002', month: 2, year: 2026, commission: 0, bonus: 3_000_000, otherIncome: 500_000, otherAllowance: 0 },
-  { employeeId: 'EMP003', month: 2, year: 2026, commission: 0, bonus: 0, otherIncome: 0, otherAllowance: 500_000 },
-  { employeeId: 'EMP004', month: 2, year: 2026, commission: 0, bonus: 1_000_000, otherIncome: 0, otherAllowance: 0 },
-  { employeeId: 'EMP005', month: 2, year: 2026, commission: 0, bonus: 0, otherIncome: 0, otherAllowance: 0 },
-  { employeeId: 'EMP006', month: 2, year: 2026, commission: 3_000_000, bonus: 0, otherIncome: 0, otherAllowance: 0 },
-  { employeeId: 'EMP007', month: 2, year: 2026, commission: 0, bonus: 1_500_000, otherIncome: 1_000_000, otherAllowance: 500_000 },
-  { employeeId: 'EMP008', month: 2, year: 2026, commission: 0, bonus: 0, otherIncome: 0, otherAllowance: 0 },
-  { employeeId: 'EMP009', month: 2, year: 2026, commission: 0, bonus: 500_000, otherIncome: 200_000, otherAllowance: 0 },
-  { employeeId: 'EMP010', month: 2, year: 2026, commission: 10_000_000, bonus: 5_000_000, otherIncome: 0, otherAllowance: 2_000_000 },
+  { employeeId: 'EMP001', month: 2, year: 2026, commission: 5_000_000, commissionDetail: 'GT ứng viên Trần Văn B', bonus: 2_000_000, bonusDetail: 'Thưởng KPI Q1', otherIncome: 0, otherIncomeDetail: '', otherAllowance: 1_000_000, otherAllowanceDetail: 'Công tác phí' },
+  { employeeId: 'EMP002', month: 2, year: 2026, commission: 0, commissionDetail: '', bonus: 3_000_000, bonusDetail: 'Thưởng dự án Marketing', otherIncome: 500_000, otherIncomeDetail: 'Hỗ trợ L&D', otherAllowance: 0, otherAllowanceDetail: '' },
+  { employeeId: 'EMP003', month: 2, year: 2026, commission: 0, commissionDetail: '', bonus: 0, bonusDetail: '', otherIncome: 0, otherIncomeDetail: '', otherAllowance: 500_000, otherAllowanceDetail: 'OT 10h' },
+  { employeeId: 'EMP004', month: 2, year: 2026, commission: 0, commissionDetail: '', bonus: 1_000_000, bonusDetail: 'Thưởng pass TV', otherIncome: 0, otherIncomeDetail: '', otherAllowance: 0, otherAllowanceDetail: '' },
+  { employeeId: 'EMP005', month: 2, year: 2026, commission: 0, commissionDetail: '', bonus: 0, bonusDetail: '', otherIncome: 0, otherIncomeDetail: '', otherAllowance: 0, otherAllowanceDetail: '' },
+  { employeeId: 'EMP006', month: 2, year: 2026, commission: 3_000_000, commissionDetail: 'GT ứng viên Lê C', bonus: 0, bonusDetail: '', otherIncome: 0, otherIncomeDetail: '', otherAllowance: 0, otherAllowanceDetail: '' },
+  { employeeId: 'EMP007', month: 2, year: 2026, commission: 0, commissionDetail: '', bonus: 1_500_000, bonusDetail: 'Thưởng thâm niên', otherIncome: 1_000_000, otherIncomeDetail: 'Hỗ trợ chứng chỉ CPA', otherAllowance: 500_000, otherAllowanceDetail: 'Đi lại' },
+  { employeeId: 'EMP008', month: 2, year: 2026, commission: 0, commissionDetail: '', bonus: 0, bonusDetail: '', otherIncome: 0, otherIncomeDetail: '', otherAllowance: 0, otherAllowanceDetail: '' },
+  { employeeId: 'EMP009', month: 2, year: 2026, commission: 0, commissionDetail: '', bonus: 500_000, bonusDetail: 'Thưởng bài viết', otherIncome: 200_000, otherIncomeDetail: 'Hỗ trợ L&D', otherAllowance: 0, otherAllowanceDetail: '' },
+  { employeeId: 'EMP010', month: 2, year: 2026, commission: 10_000_000, commissionDetail: 'GT 2 ứng viên Senior', bonus: 5_000_000, bonusDetail: 'Thưởng doanh số Q1', otherIncome: 0, otherIncomeDetail: '', otherAllowance: 2_000_000, otherAllowanceDetail: 'OT + Đi lại' },
 ];
 
 // ═══ MOCK PAYROLL BATCHES (5 tháng: T10/2025 → T2/2026) ═══
@@ -372,45 +369,48 @@ function buildSIForEmployee(emp: Employee, month: number, year: number, unpaidLe
 
 function buildTimekeepingForMonth(emp: Employee, month: number, year: number): Timekeeping {
   const std = [10, 12].includes(month) ? 22 : 20;
+  const base = { employeeId: emp.id, month, year, standardDays: std, unpaidLeaveProbation: 0, unpaidLeaveOfficial: 0 };
 
   if (emp.status === 'thai_san') {
-    return { employeeId: emp.id, month, year, standardDays: std, actualDays: 0, probationDays: 0, officialDays: 0, remainingLeave: 3, unpaidLeave: 0 };
+    return { ...base, actualDays: 0, probationDays: 0, officialDays: 0, remainingLeave: 3, unpaidLeave: 0 };
   }
   if (emp.status === 'nghi_viec_tv') {
-    return { employeeId: emp.id, month, year, standardDays: std, actualDays: 3, probationDays: 3, officialDays: 0, remainingLeave: 0, unpaidLeave: 0 };
+    return { ...base, actualDays: 3, probationDays: 3, officialDays: 0, remainingLeave: 0, unpaidLeave: 0 };
   }
   if (emp.status === 'nghi_viec_ct') {
-    return { employeeId: emp.id, month, year, standardDays: std, actualDays: 3, probationDays: 0, officialDays: 3, remainingLeave: 0, unpaidLeave: 17 };
+    return { ...base, actualDays: 3, probationDays: 0, officialDays: 3, remainingLeave: 0, unpaidLeave: 17, unpaidLeaveOfficial: 17 };
   }
 
-  // het_thu_viec: chỉ tháng 2/2026 mới split, các tháng trước là thử việc thuần
   if (emp.status === 'het_thu_viec') {
     if (month === 2 && year === 2026) {
-      return { employeeId: emp.id, month, year, standardDays: std, actualDays: 20, probationDays: 7, officialDays: 13, remainingLeave: 0, unpaidLeave: 0 };
+      return { ...base, actualDays: 20, probationDays: 7, officialDays: 13, remainingLeave: 0, unpaidLeave: 0 };
     }
-    return { employeeId: emp.id, month, year, standardDays: std, actualDays: std, probationDays: std, officialDays: 0, remainingLeave: 0, unpaidLeave: 0 };
+    return { ...base, actualDays: std, probationDays: std, officialDays: 0, remainingLeave: 0, unpaidLeave: 0 };
   }
 
   if (emp.status === 'thu_viec') {
-    return { employeeId: emp.id, month, year, standardDays: std, actualDays: std - 2, probationDays: std - 2, officialDays: 0, remainingLeave: 0, unpaidLeave: 2 };
+    return { ...base, actualDays: std - 2, probationDays: std - 2, officialDays: 0, remainingLeave: 0, unpaidLeave: 2, unpaidLeaveProbation: 2 };
   }
 
-  // chinh_thuc
-  return { employeeId: emp.id, month, year, standardDays: std, actualDays: std, probationDays: 0, officialDays: std, remainingLeave: 3, unpaidLeave: 0 };
+  return { ...base, actualDays: std, probationDays: 0, officialDays: std, remainingLeave: 3, unpaidLeave: 0 };
 }
 
 function buildVariableForMonth(emp: Employee, month: number, year: number): VariableIncome {
   const orig = mockVariableIncomes.find(v => v.employeeId === emp.id);
   const mult = VARIABLE_MULTIPLIERS[month] ?? 1;
   if (!orig) {
-    return { employeeId: emp.id, month, year, commission: 0, bonus: 0, otherIncome: 0, otherAllowance: 0 };
+    return { employeeId: emp.id, month, year, commission: 0, commissionDetail: '', bonus: 0, bonusDetail: '', otherIncome: 0, otherIncomeDetail: '', otherAllowance: 0, otherAllowanceDetail: '' };
   }
   return {
     employeeId: emp.id, month, year,
     commission:     Math.round(orig.commission * mult),
+    commissionDetail: orig.commissionDetail,
     bonus:          Math.round(orig.bonus * mult),
+    bonusDetail: orig.bonusDetail,
     otherIncome:    Math.round(orig.otherIncome * mult),
+    otherIncomeDetail: orig.otherIncomeDetail,
     otherAllowance: Math.round(orig.otherAllowance * mult),
+    otherAllowanceDetail: orig.otherAllowanceDetail,
   };
 }
 
@@ -424,7 +424,6 @@ function generateMockBatches(): PayrollBatch[] {
       const empPkg: GrossPackage = {
         ...defaultGrossPackage,
         baseSalary: emp.baseSalary,
-        ...(employeePackageOverrides[emp.id] || {}),
       };
 
       return calculatePayrollRecord(emp, tk, si, vi, empPkg);

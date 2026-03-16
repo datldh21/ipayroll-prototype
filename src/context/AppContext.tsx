@@ -19,9 +19,22 @@ import {
   mockPayrollBatches,
   mockProposals,
   defaultGrossPackage,
-  employeePackageOverrides,
 } from '../data/mockData';
 import { calculatePayrollRecord } from '../utils/payrollCalculator';
+
+export interface PayrollEditableFields {
+  commission?: number;
+  commissionDetail?: string;
+  bonus?: number;
+  bonusDetail?: string;
+  otherIncome?: number;
+  otherIncomeDetail?: string;
+  otherAllowance?: number;
+  otherAllowanceDetail?: string;
+  retroDeduction?: number;
+  retroAddition?: number;
+  remainingLeave?: number;
+}
 
 interface AppContextType {
   currentUser: User;
@@ -36,12 +49,11 @@ interface AppContextType {
   setVariableIncomes: React.Dispatch<React.SetStateAction<VariableIncome[]>>;
   grossPackage: GrossPackage;
   setGrossPackage: React.Dispatch<React.SetStateAction<GrossPackage>>;
-  packageOverrides: Record<string, Partial<GrossPackage>>;
-  setPackageOverrides: React.Dispatch<React.SetStateAction<Record<string, Partial<GrossPackage>>>>;
   payrollBatches: PayrollBatch[];
   setPayrollBatches: React.Dispatch<React.SetStateAction<PayrollBatch[]>>;
   generatePayroll: (month: number, year: number) => PayrollBatch;
   approveBatch: (batchId: string) => void;
+  updatePayrollRecord: (batchId: string, recordId: string, changes: PayrollEditableFields) => void;
   emailsSent: Record<string, boolean>;
   setEmailsSent: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   proposals: Proposal[];
@@ -66,7 +78,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [socialInsurance, setSocialInsurance] = useState<SocialInsurance[]>(mockSocialInsurance);
   const [variableIncomes, setVariableIncomes] = useState<VariableIncome[]>(mockVariableIncomes);
   const [grossPackage, setGrossPackage] = useState<GrossPackage>(defaultGrossPackage);
-  const [packageOverrides, setPackageOverrides] = useState<Record<string, Partial<GrossPackage>>>(employeePackageOverrides);
   const [payrollBatches, setPayrollBatches] = useState<PayrollBatch[]>(mockPayrollBatches);
   const [emailsSent, setEmailsSent] = useState<Record<string, boolean>>({});
   const [proposals, setProposals] = useState<Proposal[]>(mockProposals);
@@ -94,18 +105,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const generatePayroll = useCallback((month: number, year: number): PayrollBatch => {
     const records: PayrollRecord[] = employees.map((emp) => {
       const tk = timekeeping.find((t) => t.employeeId === emp.id && t.month === month && t.year === year)
-        || { employeeId: emp.id, month, year, standardDays: 20, actualDays: 20, probationDays: 0, officialDays: 20, remainingLeave: 0, unpaidLeave: 0 };
+        || { employeeId: emp.id, month, year, standardDays: 20, actualDays: 20, probationDays: 0, officialDays: 20, remainingLeave: 0, unpaidLeave: 0, unpaidLeaveProbation: 0, unpaidLeaveOfficial: 0 };
       const si = socialInsurance.find((s) => s.employeeId === emp.id && s.month === month && s.year === year)
         || { employeeId: emp.id, month, year, baseSI: 0, bhxh: 0, bhyt: 0, bhtn: 0, siEmployee: 0, bhxhEmployer: 0, bhytEmployer: 0, bhtnEmployer: 0, siEmployer: 0, unionFee: 0, isExempt: false, note: '' };
       const vi = variableIncomes.find((v) => v.employeeId === emp.id && v.month === month && v.year === year)
-        || { employeeId: emp.id, month, year, commission: 0, bonus: 0, otherIncome: 0, otherAllowance: 0 };
+        || { employeeId: emp.id, month, year, commission: 0, commissionDetail: '', bonus: 0, bonusDetail: '', otherIncome: 0, otherIncomeDetail: '', otherAllowance: 0, otherAllowanceDetail: '' };
 
-      // Tạo gói thu nhập cho NV cụ thể = default package + override
-      const empPkg: GrossPackage = {
-        ...grossPackage,
-        baseSalary: emp.baseSalary,
-        ...(packageOverrides[emp.id] || {}),
-      };
+      const empPkg: GrossPackage = { ...grossPackage, baseSalary: emp.baseSalary };
 
       return calculatePayrollRecord(emp, tk, si, vi, empPkg);
     });
@@ -137,7 +143,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
 
     return batch;
-  }, [employees, timekeeping, socialInsurance, variableIncomes, grossPackage, packageOverrides, currentUser]);
+  }, [employees, timekeeping, socialInsurance, variableIncomes, grossPackage, currentUser]);
 
   const approveBatch = useCallback((batchId: string) => {
     setPayrollBatches((prev) =>
@@ -148,6 +154,64 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       )
     );
   }, [currentUser]);
+
+  const updatePayrollRecord = useCallback((batchId: string, recordId: string, changes: PayrollEditableFields) => {
+    setPayrollBatches((prev) =>
+      prev.map((batch) => {
+        if (batch.id !== batchId) return batch;
+
+        const newRecords = batch.records.map((rec) => {
+          if (rec.id !== recordId) return rec;
+
+          const emp = employees.find((e) => e.id === rec.employeeId);
+          if (!emp) return rec;
+
+          const tk = timekeeping.find((t) => t.employeeId === emp.id && t.month === batch.month && t.year === batch.year)
+            || { employeeId: emp.id, month: batch.month, year: batch.year, standardDays: 20, actualDays: 20, probationDays: 0, officialDays: 20, remainingLeave: 0, unpaidLeave: 0, unpaidLeaveProbation: 0, unpaidLeaveOfficial: 0 };
+          const si = socialInsurance.find((s) => s.employeeId === emp.id && s.month === batch.month && s.year === batch.year)
+            || { employeeId: emp.id, month: batch.month, year: batch.year, baseSI: 0, bhxh: 0, bhyt: 0, bhtn: 0, siEmployee: 0, bhxhEmployer: 0, bhytEmployer: 0, bhtnEmployer: 0, siEmployer: 0, unionFee: 0, isExempt: false, note: '' };
+
+          const mergedVi: VariableIncome = {
+            employeeId: emp.id,
+            month: batch.month,
+            year: batch.year,
+            commission: changes.commission ?? rec.commission,
+            commissionDetail: changes.commissionDetail ?? rec.commissionDetail,
+            bonus: changes.bonus ?? rec.bonus,
+            bonusDetail: changes.bonusDetail ?? rec.bonusDetail,
+            otherIncome: changes.otherIncome ?? rec.otherIncome,
+            otherIncomeDetail: changes.otherIncomeDetail ?? rec.otherIncomeDetail,
+            otherAllowance: changes.otherAllowance ?? rec.otherAllowance,
+            otherAllowanceDetail: changes.otherAllowanceDetail ?? rec.otherAllowanceDetail,
+          };
+
+          const empPkg: GrossPackage = { ...grossPackage, baseSalary: emp.baseSalary };
+
+          const newRec = calculatePayrollRecord(
+            emp, tk, si, mergedVi, empPkg,
+            changes.retroDeduction ?? rec.retroDeduction,
+            changes.retroAddition ?? rec.retroAddition,
+          );
+
+          if (changes.remainingLeave !== undefined) {
+            newRec.remainingLeave = changes.remainingLeave;
+          }
+
+          return newRec;
+        });
+
+        return {
+          ...batch,
+          records: newRecords,
+          totalGross: newRecords.reduce((s, r) => s + r.grossSalary, 0),
+          totalNet: newRecords.reduce((s, r) => s + r.netSalary, 0),
+          totalTax: newRecords.reduce((s, r) => s + r.pit, 0),
+          totalSI: newRecords.reduce((s, r) => s + r.siEmployee, 0),
+          totalEmployerCost: newRecords.reduce((s, r) => s + r.totalEmployerCost, 0),
+        };
+      })
+    );
+  }, [employees, timekeeping, socialInsurance, grossPackage]);
 
   return (
     <AppContext.Provider
@@ -164,12 +228,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setVariableIncomes,
         grossPackage,
         setGrossPackage,
-        packageOverrides,
-        setPackageOverrides,
         payrollBatches,
         setPayrollBatches,
         generatePayroll,
         approveBatch,
+        updatePayrollRecord,
         emailsSent,
         setEmailsSent,
         proposals,

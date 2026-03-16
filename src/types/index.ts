@@ -48,6 +48,7 @@ export interface Employee {
   lastWorkingDate: string; // Ngày nghỉ việc
   dependents: number;      // Số người phụ thuộc
   baseSalary: number;      // Lương cơ bản
+  costAccount: string;     // Tài khoản chi phí (GL code, e.g. "642")
   avatar?: string;
 }
 
@@ -61,7 +62,9 @@ export interface Timekeeping {
   probationDays: number;   // Ngày công giai đoạn Thử việc
   officialDays: number;    // Ngày công giai đoạn Chính thức
   remainingLeave: number;  // Phép dư
-  unpaidLeave: number;     // Nghỉ không lương
+  unpaidLeave: number;     // Nghỉ không lương (tổng)
+  unpaidLeaveProbation: number;  // Nghỉ KKL giai đoạn TV
+  unpaidLeaveOfficial: number;   // Nghỉ KKL giai đoạn CT
 }
 
 // ==================== SOCIAL INSURANCE ====================
@@ -92,19 +95,21 @@ export interface VariableIncome {
   month: number;
   year: number;
   commission: number;      // Hoa hồng
+  commissionDetail: string;
   bonus: number;           // Thưởng khác (lễ tết, thâm niên)
+  bonusDetail: string;
   otherIncome: number;     // Thu nhập khác (L&D)
+  otherIncomeDetail: string;
   otherAllowance: number;  // Trợ cấp khác (OT, đi lại)
+  otherAllowanceDetail: string;
 }
 
 // ==================== GÓI THU NHẬP THEO HỢP ĐỒNG (GROSS PACKAGE) ====================
-// Các khoản trong gói HĐ được prorate theo ngày công
+// Thưởng HQCV được tính tự động: HĐTV = base - lunch, HĐLĐ = base - lunch - phone
 export interface GrossPackage {
   baseSalary: number;        // Lương cơ bản
   lunch: number;             // Trợ cấp ăn trưa
   phone: number;             // Hỗ trợ điện thoại
-  performanceBonus: number;  // Thưởng hiệu quả CV
-  otherPackage: number;      // Trợ cấp khác trong gói HĐ
 }
 
 // ==================== PAYROLL RECORD ====================
@@ -117,36 +122,55 @@ export interface PayrollRecord {
   month: number;
   year: number;
 
+  // ═══ THÔNG TIN NHÂN VIÊN (từ Employee) ═══
+  email: string;
+  bankAccount: string;
+  bankName: string;
+  dependents: number;
+  costAccount: string;
+
+  remainingLeave: number;    // Ngày phép dư
+
+  // ═══ GÓI THU NHẬP THEO HĐLĐ (contract-level, trước prorate) ═══
+  packageBaseSalary: number;
+  packageLunch: number;
+  packagePhone: number;
+  packagePerfBonus: number;  // = baseSalary - lunch - phone
+  packageTotal: number;
+
+  // ═══ LƯƠNG THỬ VIỆC THEO HĐTV (contract-level, không có ĐT) ═══
+  probPackageBaseSalary: number;
+  probPackageLunch: number;
+  probPackagePerfBonus: number;  // = baseSalary - lunch
+  probPackageTotal: number;
+
   // ═══ NHÓM 1: THU NHẬP THEO NGÀY CÔNG (PRORATED) ═══
   baseSalary: number;        // Gói lương CB hợp đồng
   standardDays: number;
   actualDays: number;
   probationDays: number;     // Ngày công giai đoạn TV
   officialDays: number;      // Ngày công giai đoạn CT
+  unpaidLeaveProbation: number;
+  unpaidLeaveOfficial: number;
 
-  // Gói thu nhập prorated cho giai đoạn Thử việc
-  probationBaseSalary: number;
-  probationLunch: number;
-  probationPhone: number;
-  probationPerfBonus: number;
-  probationTotal: number;    // Cộng thu nhập giai đoạn TV
-
-  // Gói thu nhập prorated cho giai đoạn Chính thức
-  officialBaseSalary: number;
-  officialLunch: number;
-  officialPhone: number;
-  officialPerfBonus: number;
-  officialTotal: number;     // Cộng thu nhập giai đoạn CT
+  // TN theo ngày công (gộp TV + CT + Phép dư)
+  proratedBaseSalary: number;  // Lương CB theo ngày công
+  proratedPerfBonus: number;   // Thưởng HQCV theo ngày công
+  proratedTotal: number;       // Cộng TN theo ngày công
 
   // Tổng phụ cấp thực tế (để tính thu nhập chịu thuế)
-  totalLunchActual: number;  // Trợ cấp ăn trưa thực tế
-  totalPhoneActual: number;  // Hỗ trợ ĐT thực tế
+  totalLunchActual: number;  // TC ăn trưa theo ngày công (gộp TV + CT + Phép dư)
+  totalPhoneActual: number;  // HT ĐT (= package phone, không prorate)
 
   // ═══ NHÓM 2: THU NHẬP KHÁC & TỔNG THU NHẬP ═══
   commission: number;        // Hoa hồng
+  commissionDetail: string;
   bonus: number;             // Thưởng khác
+  bonusDetail: string;
   otherIncome: number;       // Thu nhập khác (L&D)
+  otherIncomeDetail: string;
   otherAllowance: number;    // Trợ cấp khác (OT, đi lại)
+  otherAllowanceDetail: string;
   totalVariableIncome: number; // Cộng thu nhập khác
 
   grossSalary: number;       // Tổng thu nhập (Gross)
@@ -164,6 +188,7 @@ export interface PayrollRecord {
   siBhtn: number;            // BHTN NLĐ 1%
   siEmployee: number;        // Cộng BH NLĐ 10.5%
   personalDeduction: number; // Giảm trừ bản thân 15.500.000
+  dependentCount: number;    // Số người phụ thuộc
   dependentDeduction: number;// Giảm trừ NPT × 6.200.000
 
   // ═══ NHÓM 5: THUẾ TNCN ═══

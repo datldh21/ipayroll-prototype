@@ -10,18 +10,8 @@ import {
   DEPENDENT_DEDUCTION,
   FLAT_TAX_RATE,
   EmployeeStatus,
-  SI_BHXH_EMPLOYER_RATE,
-  SI_BHYT_EMPLOYER_RATE,
-  SI_BHTN_EMPLOYER_RATE,
-  SI_RATE_EMPLOYER,
-  UNION_FEE_RATE,
 } from '../types';
 
-// ════════════════════════════════════════════════════
-// Xác định phương thức tính thuế dựa trên trạng thái NV
-// ════════════════════════════════════════════════════
-// Lũy tiến (LT): Chính thức, Thai sản, Hết thử việc trong tháng
-// Flat 10%:       Thử việc, Nghỉ việc chính thức, Nghỉ việc thử việc
 function getTaxMethod(status: EmployeeStatus): 'progressive' | 'flat' {
   if (['chinh_thuc', 'het_thu_viec', 'thai_san'].includes(status)) {
     return 'progressive';
@@ -29,9 +19,6 @@ function getTaxMethod(status: EmployeeStatus): 'progressive' | 'flat' {
   return 'flat';
 }
 
-// ════════════════════════════════════════════════════
-// Tính thuế TNCN theo biểu lũy tiến 7 bậc
-// ════════════════════════════════════════════════════
 function calculateProgressiveTax(taxAssessableIncome: number): number {
   if (taxAssessableIncome <= 0) return 0;
 
@@ -49,19 +36,11 @@ function calculateProgressiveTax(taxAssessableIncome: number): number {
   return Math.round(tax);
 }
 
-// ════════════════════════════════════════════════════
-// Prorate 1 khoản thu nhập theo ngày công
-// Công thức: (Khoản thu nhập trong gói HĐ / Công chuẩn) × Số ngày thực tế
-// ════════════════════════════════════════════════════
 function prorate(packageAmount: number, standardDays: number, actualDays: number): number {
   if (standardDays <= 0 || actualDays <= 0) return 0;
   return Math.round((packageAmount / standardDays) * actualDays);
 }
 
-// ════════════════════════════════════════════════════
-// HÀM CHÍNH: Tính toán bản ghi lương cho 1 nhân viên
-// Theo đúng 7 nhóm logic trong RULE.md
-// ════════════════════════════════════════════════════
 export function calculatePayrollRecord(
   employee: Employee,
   timekeeping: Timekeeping,
@@ -74,36 +53,43 @@ export function calculatePayrollRecord(
   const std = timekeeping.standardDays;
   const probDays = timekeeping.probationDays;
   const offDays  = timekeeping.officialDays;
+  const leaveDays = timekeeping.remainingLeave;
 
-  // Gói thu nhập HĐ (lấy baseSalary từ Employee nếu package = 0)
   const pkgBase  = grossPackage.baseSalary || employee.baseSalary;
   const pkgLunch = grossPackage.lunch;
   const pkgPhone = grossPackage.phone;
-  const pkgPerf  = grossPackage.performanceBonus;
-  const pkgOther = grossPackage.otherPackage;
+
+  // Thưởng HQCV tự tính từ gói HĐ
+  const probPkgPerf = pkgBase - pkgLunch;              // HĐTV: base - lunch
+  const pkgPerf     = pkgBase - pkgLunch - pkgPhone;   // HĐLĐ: base - lunch - phone
+
+  // Contract-level package totals (không có TC khác)
+  const packageTotal     = pkgBase + pkgLunch + pkgPhone + pkgPerf;
+  const probPackageTotal = pkgBase + pkgLunch + probPkgPerf;
 
   // ═══ NHÓM 1: THU NHẬP THEO NGÀY CÔNG (PRORATED) ═══
-  // Chia 2 giai đoạn: Thử việc và Chính thức
+  // Lương CB = LươngTV/std*NC_TV + LươngCB/std*NC_CT + LươngCB/std*Phép_dư
+  const proratedBaseSalary =
+    prorate(pkgBase, std, probDays) +
+    prorate(pkgBase, std, offDays) +
+    prorate(pkgBase, std, leaveDays);
 
-  // Giai đoạn Thử việc
-  const probBaseSalary = prorate(pkgBase, std, probDays);
-  const probLunch      = prorate(pkgLunch, std, probDays);
-  const probPhone      = prorate(pkgPhone, std, probDays);
-  const probPerfBonus  = prorate(pkgPerf, std, probDays);
-  const probOther      = prorate(pkgOther, std, probDays);
-  const probationTotal = probBaseSalary + probLunch + probPhone + probPerfBonus + probOther;
+  // TC Ăn trưa = TC_TV/std*NC_TV + TC_LD/std*NC_CT + TC_LD/std*Phép_dư
+  const totalLunchActual =
+    prorate(pkgLunch, std, probDays) +
+    prorate(pkgLunch, std, offDays) +
+    prorate(pkgLunch, std, leaveDays);
 
-  // Giai đoạn Chính thức
-  const offBaseSalary = prorate(pkgBase, std, offDays);
-  const offLunch      = prorate(pkgLunch, std, offDays);
-  const offPhone      = prorate(pkgPhone, std, offDays);
-  const offPerfBonus  = prorate(pkgPerf, std, offDays);
-  const offOther      = prorate(pkgOther, std, offDays);
-  const officialTotal = offBaseSalary + offLunch + offPhone + offPerfBonus + offOther;
+  // HT ĐT = gói HĐLĐ (không prorate)
+  const totalPhoneActual = pkgPhone;
 
-  // Tổng phụ cấp thực tế (ăn trưa + điện thoại) — cần cho tính thu nhập chịu thuế
-  const totalLunchActual = probLunch + offLunch;
-  const totalPhoneActual = probPhone + offPhone;
+  // Thưởng HQCV = HQCV_TV/std*NC_TV + HQCV_LD/std*NC_CT + HQCV_LD/std*Phép_dư
+  const proratedPerfBonus =
+    prorate(probPkgPerf, std, probDays) +
+    prorate(pkgPerf, std, offDays) +
+    prorate(pkgPerf, std, leaveDays);
+
+  const proratedTotal = proratedBaseSalary + totalLunchActual + totalPhoneActual + proratedPerfBonus;
 
   // ═══ NHÓM 2: THU NHẬP KHÁC & TỔNG THU NHẬP (GROSS) ═══
   const totalVariableIncome =
@@ -112,12 +98,9 @@ export function calculatePayrollRecord(
     variableIncome.otherIncome +
     variableIncome.otherAllowance;
 
-  // Gross = Thu nhập ngày công TV + Thu nhập ngày công CT + Thu nhập khác
-  const grossSalary = probationTotal + officialTotal + totalVariableIncome;
+  const grossSalary = proratedTotal + totalVariableIncome;
 
   // ═══ NHÓM 3: THU NHẬP CHỊU THUẾ ═══
-  // = Gross - Trợ cấp ăn trưa thực tế - Hỗ trợ điện thoại thực tế
-  // (Hai khoản này được cấu hình là KHÔNG chịu thuế)
   const nonTaxableLunch = totalLunchActual;
   const nonTaxablePhone = totalPhoneActual;
   const taxableIncome = grossSalary - nonTaxableLunch - nonTaxablePhone;
@@ -127,7 +110,7 @@ export function calculatePayrollRecord(
   const siBhxh     = socialInsurance.bhxh;
   const siBhyt     = socialInsurance.bhyt;
   const siBhtn     = socialInsurance.bhtn;
-  const siEmployee = socialInsurance.siEmployee; // Cộng 10.5%
+  const siEmployee = socialInsurance.siEmployee;
 
   // ═══ NHÓM 5: TÍNH THUẾ TNCN ═══
   const taxMethod = getTaxMethod(employee.status);
@@ -138,30 +121,21 @@ export function calculatePayrollRecord(
   let taxAssessableIncome = 0;
 
   if (taxMethod === 'progressive') {
-    // ── Nhánh 1: Thuế Lũy tiến ──
-    // Thu nhập tính thuế = Thu nhập chịu thuế - (BH 10.5% + Giảm trừ bản thân + Giảm trừ NPT)
     personalDeduction = PERSONAL_DEDUCTION;
     dependentDeduction = employee.dependents * DEPENDENT_DEDUCTION;
 
     taxAssessableIncome = taxableIncome - siEmployee - personalDeduction - dependentDeduction;
-    // Nếu < 0 thì mặc định = 0
     taxAssessableIncome = Math.max(0, taxAssessableIncome);
 
     pit = calculateProgressiveTax(taxAssessableIncome);
   } else {
-    // ── Nhánh 2: Thuế 10% flat ──
-    // Thu nhập tính thuế = Thu nhập chịu thuế (TUYỆT ĐỐI KHÔNG trừ giảm trừ)
     taxAssessableIncome = taxableIncome;
     pit = Math.round(taxableIncome * FLAT_TAX_RATE);
   }
 
   // ═══ NHÓM 6: KHẤU TRỪ THỰC TẾ & NET PAY ═══
-  // Khoản trừ vào lương = Thuế TNCN + BH 10.5% + Truy thu sau thuế
-  // LƯU Ý: Đoàn phí 2% KHÔNG CỘNG vào khấu trừ (Cty đóng thay)
   const totalDeduction = pit + siEmployee + retroDeduction;
   const unionFee = socialInsurance.unionFee;
-
-  // Thực lĩnh = Gross - Khoản trừ + Cộng thêm sau thuế
   const netSalary = grossSalary - totalDeduction + retroAddition;
 
   // ═══ NHÓM 7: CHI PHÍ CÔNG TY TRẢ ═══
@@ -170,7 +144,6 @@ export function calculatePayrollRecord(
   const siEmployerBhtn = socialInsurance.bhtnEmployer;
   const siEmployer     = socialInsurance.siEmployer;
   const employerUnionFee = unionFee;
-  // Tổng chi phí Cty = Lương thực lĩnh + BH Cty đóng + Đoàn phí Cty
   const totalEmployerCost = netSalary + siEmployer + employerUnionFee;
 
   return {
@@ -182,33 +155,50 @@ export function calculatePayrollRecord(
     month: timekeeping.month,
     year: timekeeping.year,
 
-    // Nhóm 1
+    email: employee.email,
+    bankAccount: employee.bankAccount,
+    bankName: employee.bankName,
+    dependents: employee.dependents,
+    costAccount: employee.costAccount,
+    remainingLeave: timekeeping.remainingLeave,
+
+    // Gói TN theo HĐLĐ
+    packageBaseSalary: pkgBase,
+    packageLunch: pkgLunch,
+    packagePhone: pkgPhone,
+    packagePerfBonus: pkgPerf,
+    packageTotal,
+
+    // Lương TV theo HĐTV (không có ĐT)
+    probPackageBaseSalary: pkgBase,
+    probPackageLunch: pkgLunch,
+    probPackagePerfBonus: probPkgPerf,
+    probPackageTotal,
+
+    // Nhóm 1: TN theo ngày công
     baseSalary: employee.baseSalary,
     standardDays: std,
     actualDays: timekeeping.actualDays,
     probationDays: probDays,
     officialDays: offDays,
+    unpaidLeaveProbation: timekeeping.unpaidLeaveProbation,
+    unpaidLeaveOfficial: timekeeping.unpaidLeaveOfficial,
 
-    probationBaseSalary: probBaseSalary,
-    probationLunch: probLunch,
-    probationPhone: probPhone,
-    probationPerfBonus: probPerfBonus,
-    probationTotal,
-
-    officialBaseSalary: offBaseSalary,
-    officialLunch: offLunch,
-    officialPhone: offPhone,
-    officialPerfBonus: offPerfBonus,
-    officialTotal,
-
+    proratedBaseSalary,
+    proratedPerfBonus,
+    proratedTotal,
     totalLunchActual,
     totalPhoneActual,
 
     // Nhóm 2
     commission: variableIncome.commission,
+    commissionDetail: variableIncome.commissionDetail,
     bonus: variableIncome.bonus,
+    bonusDetail: variableIncome.bonusDetail,
     otherIncome: variableIncome.otherIncome,
+    otherIncomeDetail: variableIncome.otherIncomeDetail,
     otherAllowance: variableIncome.otherAllowance,
+    otherAllowanceDetail: variableIncome.otherAllowanceDetail,
     totalVariableIncome,
     grossSalary,
 
@@ -224,6 +214,7 @@ export function calculatePayrollRecord(
     siBhtn,
     siEmployee,
     personalDeduction,
+    dependentCount: employee.dependents,
     dependentDeduction,
 
     // Nhóm 5
@@ -248,11 +239,6 @@ export function calculatePayrollRecord(
   };
 }
 
-// ════════════════════════════════════════════════════
-// UTILITY FUNCTIONS
-// ════════════════════════════════════════════════════
-
-/** Format số tiền VND */
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('vi-VN', {
     style: 'decimal',
@@ -260,7 +246,6 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-/** Format ngày tháng */
 export function formatDate(dateStr: string): string {
   if (!dateStr) return '—';
   const d = new Date(dateStr);
