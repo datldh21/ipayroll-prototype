@@ -1,6 +1,7 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Shield, Save, Check, Info, RefreshCw } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { socialInsuranceService } from '../services/socialInsurance';
 import { formatCurrency } from '../utils/payrollCalculator';
 import {
   SocialInsurance as SI,
@@ -16,9 +17,14 @@ const UNPAID_LEAVE_THRESHOLD = 14;
 const EXEMPT_STATUSES = new Set(['thai_san', 'thu_viec', 'nghi_viec_tv']);
 
 export default function SocialInsurance() {
-  const { employees, timekeeping, socialInsurance, setSocialInsurance } = useApp();
+  const { employees, timekeeping, socialInsurance, setSocialInsurance, loadSocialInsurance, loadTimekeeping } = useApp();
   const [month, setMonth] = useState(2);
   const [year, setYear] = useState(2026);
+
+  useEffect(() => {
+    loadSocialInsurance(year, month);
+    loadTimekeeping(year, month);
+  }, [year, month, loadSocialInsurance, loadTimekeeping]);
   const [savedRows, setSavedRows] = useState<Record<string, boolean>>({});
   const [drafts, setDrafts] = useState<Record<string, Partial<SI>>>({});
 
@@ -39,9 +45,8 @@ export default function SocialInsurance() {
   }, [timekeeping, month, year]);
 
   // ── Recalculate all ──
-  const handleRecalculate = () => {
-    setSocialInsurance(prev =>
-      prev.map(si => {
+  const handleRecalculate = useCallback(async () => {
+    const updated = socialInsurance.map(si => {
         const emp = employees.find(e => e.id === si.employeeId);
         if (!emp || si.month !== month || si.year !== year) return si;
 
@@ -95,10 +100,29 @@ export default function SocialInsurance() {
           isExempt: false,
           note: '',
         };
-      })
-    );
+      });
+    setSocialInsurance(updated);
     setDrafts({});
-  };
+    for (const si of updated) {
+      if (si.month !== month || si.year !== year || !si.id) continue;
+        try {
+          await socialInsuranceService.update(si.id, {
+            baseSI: si.baseSI,
+            bhxh: si.bhxh,
+            bhyt: si.bhyt,
+            bhtn: si.bhtn,
+            bhxhEmployer: si.bhxhEmployer,
+            bhytEmployer: si.bhytEmployer,
+            bhtnEmployer: si.bhtnEmployer,
+            unionFee: si.unionFee,
+            isExempt: si.isExempt,
+            note: si.note,
+          });
+        } catch (err) {
+          console.error('Failed to persist SI:', err);
+        }
+    }
+  }, [employees, socialInsurance, month, year, getUnpaidLeave, setSocialInsurance]);
 
   // ── Per-row draft editing ──
   const getDraft = (empId: string): SI | null => {
@@ -117,19 +141,28 @@ export default function SocialInsurance() {
     });
   }, []);
 
-  const handleRowSave = useCallback((empId: string) => {
+  const handleRowSave = useCallback(async (empId: string) => {
     const draft = drafts[empId];
     if (!draft) return;
-    setSocialInsurance(prev =>
-      prev.map(si => {
-        if (si.employeeId !== empId || si.month !== month || si.year !== year) return si;
-        return { ...si, ...draft };
-      })
-    );
-    setDrafts(prev => { const n = { ...prev }; delete n[empId]; return n; });
-    setSavedRows(prev => ({ ...prev, [empId]: true }));
-    setTimeout(() => setSavedRows(prev => ({ ...prev, [empId]: false })), 2000);
-  }, [drafts, month, year, setSocialInsurance]);
+
+    const original = currentData.find(s => s.employeeId === empId);
+    if (!original?.id) return;
+
+    try {
+      await socialInsuranceService.update(original.id, draft);
+      setSocialInsurance(prev =>
+        prev.map(si => {
+          if (si.employeeId !== empId || si.month !== month || si.year !== year) return si;
+          return { ...si, ...draft };
+        })
+      );
+      setDrafts(prev => { const n = { ...prev }; delete n[empId]; return n; });
+      setSavedRows(prev => ({ ...prev, [empId]: true }));
+      setTimeout(() => setSavedRows(prev => ({ ...prev, [empId]: false })), 2000);
+    } catch (err) {
+      console.error('Failed to save social insurance:', err);
+    }
+  }, [drafts, currentData, month, year, setSocialInsurance]);
 
   // ── Summaries (from committed data, not drafts) ──
   const eligibleData = useMemo(

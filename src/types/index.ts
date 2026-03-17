@@ -54,6 +54,7 @@ export interface Employee {
 
 // ==================== TIMEKEEPING ====================
 export interface Timekeeping {
+  id?: string;              // From API for PATCH
   employeeId: string;
   month: number;
   year: number;
@@ -69,6 +70,7 @@ export interface Timekeeping {
 
 // ==================== SOCIAL INSURANCE ====================
 export interface SocialInsurance {
+  id?: string;              // From API for PATCH
   employeeId: string;
   month: number;
   year: number;
@@ -91,6 +93,7 @@ export interface SocialInsurance {
 
 // ==================== VARIABLE INCOMES ====================
 export interface VariableIncome {
+  id?: string;              // From API for PATCH
   employeeId: string;
   month: number;
   year: number;
@@ -296,6 +299,20 @@ export const PROPOSAL_STATUS_COLORS: Record<ProposalStatus, string> = {
   resolved: 'bg-green-100 text-green-700',
   rejected: 'bg-red-100 text-red-700',
 };
+
+export interface PayrollEditableFields {
+  commission?: number;
+  commissionDetail?: string;
+  bonus?: number;
+  bonusDetail?: string;
+  otherIncome?: number;
+  otherIncomeDetail?: string;
+  otherAllowance?: number;
+  otherAllowanceDetail?: string;
+  retroDeduction?: number;
+  retroAddition?: number;
+  remainingLeave?: number;
+}
 
 export interface Proposal {
   id: string;

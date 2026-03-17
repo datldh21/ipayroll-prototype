@@ -1,12 +1,17 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { CalendarClock, Upload, Info, Save, Check } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { timekeepingService } from '../services/timekeeping';
 import { Timekeeping as TK } from '../types';
 
 export default function Timekeeping() {
-  const { employees, timekeeping, setTimekeeping } = useApp();
+  const { employees, timekeeping, setTimekeeping, loadTimekeeping } = useApp();
   const [month, setMonth] = useState(2);
   const [year, setYear] = useState(2026);
+
+  useEffect(() => {
+    loadTimekeeping(year, month);
+  }, [year, month, loadTimekeeping]);
 
   // Per-row draft edits — only committed on row save
   const [drafts, setDrafts] = useState<Record<string, Partial<TK>>>({});
@@ -44,26 +49,32 @@ export default function Timekeeping() {
     });
   }, [timekeeping, month, year]);
 
-  const handleRowSave = useCallback((empId: string) => {
+  const handleRowSave = useCallback(async (empId: string) => {
     const draft = drafts[empId];
     if (!draft) return;
 
-    setTimekeeping(prev =>
-      prev.map(t => {
-        if (t.employeeId !== empId || t.month !== month || t.year !== year) return t;
-        return { ...t, ...draft };
-      })
-    );
+    const original = timekeeping.find(t => t.employeeId === empId && t.month === month && t.year === year);
+    if (!original?.id) return;
 
-    setDrafts(prev => {
-      const next = { ...prev };
-      delete next[empId];
-      return next;
-    });
-
-    setSavedRows(prev => ({ ...prev, [empId]: true }));
-    setTimeout(() => setSavedRows(prev => ({ ...prev, [empId]: false })), 2000);
-  }, [drafts, month, year, setTimekeeping]);
+    try {
+      await timekeepingService.update(original.id, draft);
+      setTimekeeping(prev =>
+        prev.map(t => {
+          if (t.employeeId !== empId || t.month !== month || t.year !== year) return t;
+          return { ...t, ...draft };
+        })
+      );
+      setDrafts(prev => {
+        const next = { ...prev };
+        delete next[empId];
+        return next;
+      });
+      setSavedRows(prev => ({ ...prev, [empId]: true }));
+      setTimeout(() => setSavedRows(prev => ({ ...prev, [empId]: false })), 2000);
+    } catch (err) {
+      console.error('Failed to save timekeeping:', err);
+    }
+  }, [drafts, timekeeping, month, year, setTimekeeping]);
 
   return (
     <div className="space-y-6">

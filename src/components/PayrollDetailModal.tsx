@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Save } from 'lucide-react';
-import { PayrollRecord, EMPLOYEE_STATUS_LABELS, EMPLOYEE_STATUS_COLORS } from '../types';
+import { PayrollRecord, PayrollEditableFields, EMPLOYEE_STATUS_LABELS, EMPLOYEE_STATUS_COLORS } from '../types';
 import { formatCurrency } from '../utils/payrollCalculator';
-import { PayrollEditableFields } from '../context/AppContext';
 
 const fc = (v: number) => (v === 0 ? '0' : formatCurrency(v));
 const fcSigned = (v: number) => {
@@ -27,7 +26,7 @@ export default function PayrollDetailModal({ record: r, batchId, onClose, onUpda
   }, [r.id]);
 
   const setField = useCallback(<K extends keyof PayrollEditableFields>(key: K, val: PayrollEditableFields[K]) => {
-    setEdits(prev => ({ ...prev, [key]: val }));
+    setEdits((prev: PayrollEditableFields) => ({ ...prev, [key]: val }));
     setDirty(true);
   }, []);
 
