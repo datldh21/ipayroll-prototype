@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useApp } from '../context/AppContext';
+import { employeesService } from '../services/employees';
 import { formatCurrency, formatDate } from '../utils/payrollCalculator';
 import {
   Employee,
@@ -40,6 +41,10 @@ export default function Employees() {
   const [showModal, setShowModal] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [showDetail, setShowDetail] = useState<Employee | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Derive unique filter options ──
@@ -56,26 +61,48 @@ export default function Employees() {
     return matchSearch && matchStatus && matchDept && matchLevel2;
   }), [employees, search, filterStatus, filterDept, filterLevel2]);
 
-  const getLunch = (_empId: string) => grossPackage.lunch;
+  const getLunch = (empId: string) => {
+    const emp = employees.find(e => e.id === empId);
+    return emp?.lunchAllowance ?? grossPackage.lunch;
+  };
+  const getPhone = (empId: string) => {
+    const emp = employees.find(e => e.id === empId);
+    return emp?.phoneAllowance ?? grossPackage.phone;
+  };
   const getPerfBonus = (empId: string) => {
     const emp = employees.find(e => e.id === empId);
     const base = emp?.baseSalary ?? 0;
-    return base - grossPackage.lunch - grossPackage.phone;
+    const lunch = getLunch(empId);
+    const phone = getPhone(empId);
+    return base - lunch - phone;
   };
 
   // ── CRUD ──
-  const handleSaveEmployee = (emp: Employee) => {
-    setEmployees((prev) => {
-      const idx = prev.findIndex((e) => e.id === emp.id);
-      if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = emp;
-        return updated;
-      }
-      return [...prev, emp];
-    });
-    setShowModal(false);
-    setEditingEmployee(null);
+  const handleSaveEmployee = async (emp: Employee) => {
+    setSaveError(null);
+    setSaving(true);
+    try {
+      const isUpdate = employees.some((e) => e.id === emp.id);
+      const saved = isUpdate
+        ? await employeesService.update(emp.id, emp)
+        : await employeesService.create(emp);
+      setEmployees((prev) => {
+        const idx = prev.findIndex((e) => e.id === saved.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = saved;
+          return updated;
+        }
+        return [...prev, saved];
+      });
+      setShowModal(false);
+      setEditingEmployee(null);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Không thể lưu nhân viên';
+      setSaveError(message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── Excel Export ──
@@ -96,6 +123,7 @@ export default function Employees() {
       'Trạng thái':    EMPLOYEE_STATUS_LABELS[emp.status],
       'Lương cơ bản':  emp.baseSalary,
       'Trợ cấp ăn trưa': getLunch(emp.id),
+      'HT Điện thoại': getPhone(emp.id),
       'Trợ cấp khác (CLCV)': getPerfBonus(emp.id),
       'Người phụ thuộc': emp.dependents,
       'Ngân hàng':     emp.bankName,
@@ -122,45 +150,77 @@ export default function Employees() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
-      const data = new Uint8Array(evt.target?.result as ArrayBuffer);
-      const wb = XLSX.read(data, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws);
+    reader.onload = async (evt) => {
+      setImportError(null);
+      setImporting(true);
+      try {
+        const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws);
 
-      const statusLabelToKey = Object.fromEntries(
-        Object.entries(EMPLOYEE_STATUS_LABELS).map(([k, v]) => [v, k])
-      );
+        const statusLabelToKey = Object.fromEntries(
+          Object.entries(EMPLOYEE_STATUS_LABELS).map(([k, v]) => [v, k])
+        );
 
-      const imported: Employee[] = rows.map((row, idx) => ({
-        id:              String(row['Mã NV'] || `IMP${String(idx + 1).padStart(3, '0')}`),
-        fullName:        String(row['Họ và tên'] || ''),
-        email:           String(row['Email'] || ''),
-        phone:           String(row['Điện thoại'] || ''),
-        bankAccount:     String(row['Số TK'] || ''),
-        bankName:        String(row['Ngân hàng'] || ''),
-        department:      String(row['Phòng ban'] || row['Level 3'] || ''),
-        position:        String(row['Vị trí'] || ''),
-        level:           String(row['Level'] || ''),
-        orgLevel1:       String(row['Level 1'] || ''),
-        orgLevel2:       String(row['Level 2'] || ''),
-        orgLevel3:       String(row['Level 3'] || ''),
-        orgLevel4:       String(row['Level 4'] || ''),
-        orgLevel5:       String(row['Level 5'] || ''),
-        status:          (statusLabelToKey[String(row['Trạng thái'])] || 'chinh_thuc') as EmployeeStatus,
-        onboardDate:     String(row['Ngày onboard'] || ''),
-        officialDate:    String(row['Ngày chính thức'] || ''),
-        lastWorkingDate: String(row['Ngày nghỉ việc'] || ''),
-        dependents:      Number(row['Người phụ thuộc'] || 0),
-        baseSalary:      Number(row['Lương cơ bản'] || 0),
-        costAccount:     String(row['TK chi phí'] || '6421'),
-      }));
+        const imported: Employee[] = rows.map((row, idx) => {
+          const lunchVal = row['Trợ cấp ăn trưa'];
+          const phoneVal = row['HT Điện thoại'];
+          return {
+            id:              String(row['Mã NV'] || `IMP${String(idx + 1).padStart(3, '0')}`),
+            fullName:        String(row['Họ và tên'] || ''),
+            email:           String(row['Email'] || ''),
+            phone:           String(row['Điện thoại'] || ''),
+            bankAccount:     String(row['Số TK'] || ''),
+            bankName:        String(row['Ngân hàng'] || ''),
+            department:      String(row['Phòng ban'] || row['Level 3'] || ''),
+            position:        String(row['Vị trí'] || ''),
+            level:           String(row['Level'] || ''),
+            orgLevel1:       String(row['Level 1'] || ''),
+            orgLevel2:       String(row['Level 2'] || ''),
+            orgLevel3:       String(row['Level 3'] || ''),
+            orgLevel4:       String(row['Level 4'] || ''),
+            orgLevel5:       String(row['Level 5'] || ''),
+            status:          (statusLabelToKey[String(row['Trạng thái'])] || 'chinh_thuc') as EmployeeStatus,
+            onboardDate:     String(row['Ngày onboard'] || ''),
+            officialDate:    String(row['Ngày chính thức'] || ''),
+            lastWorkingDate: String(row['Ngày nghỉ việc'] || ''),
+            dependents:      Number(row['Người phụ thuộc'] || 0),
+            baseSalary:      Number(row['Lương cơ bản'] || 0),
+            costAccount:     String(row['TK chi phí'] || '6421'),
+            lunchAllowance:  lunchVal !== undefined && lunchVal !== '' && !Number.isNaN(Number(lunchVal)) ? Number(lunchVal) : undefined,
+            phoneAllowance:  phoneVal !== undefined && phoneVal !== '' && !Number.isNaN(Number(phoneVal)) ? Number(phoneVal) : undefined,
+          };
+        });
 
-      setEmployees(prev => {
-        const map = new Map(prev.map(e => [e.id, e]));
-        imported.forEach(imp => map.set(imp.id, imp));
-        return Array.from(map.values());
-      });
+        const saved: Employee[] = [];
+        const errors: string[] = [];
+        for (const imp of imported) {
+          try {
+            const exists = employees.some((e) => e.id === imp.id);
+            const result = exists
+              ? await employeesService.update(imp.id, imp)
+              : await employeesService.create(imp);
+            saved.push(result);
+          } catch (err) {
+            errors.push(`${imp.id} (${imp.fullName}): ${err instanceof Error ? err.message : 'Lỗi'}`);
+          }
+        }
+
+        setEmployees((prev) => {
+          const map = new Map(prev.map((e) => [e.id, e]));
+          saved.forEach((s) => map.set(s.id, s));
+          return Array.from(map.values());
+        });
+
+        if (errors.length > 0) {
+          setImportError(`${errors.length} nhân viên lỗi: ${errors.slice(0, 3).join('; ')}${errors.length > 3 ? '...' : ''}`);
+        }
+      } catch (err) {
+        setImportError(err instanceof Error ? err.message : 'Không thể nhập Excel');
+      } finally {
+        setImporting(false);
+      }
     };
     reader.readAsArrayBuffer(file);
     e.target.value = '';
@@ -186,10 +246,11 @@ export default function Employees() {
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
+            disabled={importing}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors disabled:opacity-50"
           >
             <Upload size={15} />
-            Nhập Excel
+            {importing ? 'Đang nhập...' : 'Nhập Excel'}
           </button>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
           <button
@@ -201,6 +262,12 @@ export default function Employees() {
           </button>
         </div>
       </div>
+
+      {importError && (
+        <div className="px-4 py-2 rounded-lg bg-red-50 text-red-700 text-sm">
+          {importError}
+        </div>
+      )}
 
       {/* Search + Filter toggle */}
       <div className="flex flex-col gap-3">
@@ -300,6 +367,7 @@ export default function Employees() {
                 <th className="px-4 py-3 font-medium">Trạng thái</th>
                 <th className="px-4 py-3 font-medium text-right whitespace-nowrap">Lương CB (BHXH)</th>
                 <th className="px-4 py-3 font-medium text-right whitespace-nowrap">TC Ăn trưa</th>
+                <th className="px-4 py-3 font-medium text-right whitespace-nowrap">HT Điện thoại</th>
                 <th className="px-4 py-3 font-medium text-right whitespace-nowrap">TC Khác (CLCV)</th>
                 <th className="px-4 py-3 font-medium text-center">Thao tác</th>
               </tr>
@@ -344,6 +412,10 @@ export default function Employees() {
                   <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">
                     {formatCurrency(getLunch(emp.id))}
                   </td>
+                  {/* HT Điện thoại */}
+                  <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">
+                    {formatCurrency(getPhone(emp.id))}
+                  </td>
                   {/* Trợ cấp khác (CLCV) */}
                   <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">
                     {formatCurrency(getPerfBonus(emp.id))}
@@ -371,7 +443,7 @@ export default function Employees() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="px-4 py-12 text-center text-slate-400 text-sm">
+                  <td colSpan={13} className="px-4 py-12 text-center text-slate-400 text-sm">
                     Không tìm thấy nhân viên nào
                   </td>
                 </tr>
@@ -389,6 +461,7 @@ export default function Employees() {
         <DetailModal
           employee={showDetail}
           lunch={getLunch(showDetail.id)}
+          phone={getPhone(showDetail.id)}
           perfBonus={getPerfBonus(showDetail.id)}
           onClose={() => setShowDetail(null)}
         />
@@ -398,9 +471,12 @@ export default function Employees() {
       {showModal && (
         <EmployeeFormModal
           employee={editingEmployee}
+          grossPackage={grossPackage}
           onSave={handleSaveEmployee}
-          onClose={() => { setShowModal(false); setEditingEmployee(null); }}
+          onClose={() => { setShowModal(false); setEditingEmployee(null); setSaveError(null); }}
           nextId={`EMP${String(employees.length + 1).padStart(3, '0')}`}
+          saving={saving}
+          saveError={saveError}
         />
       )}
     </div>
@@ -411,11 +487,13 @@ export default function Employees() {
 function DetailModal({
   employee: emp,
   lunch,
+  phone,
   perfBonus,
   onClose,
 }: {
   employee: Employee;
   lunch: number;
+  phone: number;
   perfBonus: number;
   onClose: () => void;
 }) {
@@ -466,18 +544,45 @@ function DetailModal({
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-blue-50 rounded-xl p-3">
-              <p className="text-xs text-blue-500 mb-1">Lương cơ bản</p>
-              <p className="text-base font-bold text-blue-800">{formatCurrency(emp.baseSalary)}</p>
+          {/* Lương TV theo HĐTV */}
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Lương TV theo HĐTV</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-blue-50 rounded-xl p-3">
+                <p className="text-xs text-blue-500 mb-1">Lương cơ bản</p>
+                <p className="text-base font-bold text-blue-800">{formatCurrency(emp.baseSalary)}</p>
+              </div>
+              <div className="bg-orange-50 rounded-xl p-3">
+                <p className="text-xs text-orange-500 mb-1">TC Ăn trưa</p>
+                <p className="text-base font-bold text-orange-800">{formatCurrency(lunch)}</p>
+              </div>
+              <div className="bg-emerald-50 rounded-xl p-3">
+                <p className="text-xs text-emerald-500 mb-1">Thưởng HQCV</p>
+                <p className="text-base font-bold text-emerald-800">{formatCurrency(emp.baseSalary - lunch)}</p>
+              </div>
             </div>
-            <div className="bg-orange-50 rounded-xl p-3">
-              <p className="text-xs text-orange-500 mb-1">TC Ăn trưa</p>
-              <p className="text-base font-bold text-orange-800">{formatCurrency(lunch)}</p>
-            </div>
-            <div className="bg-emerald-50 rounded-xl p-3">
-              <p className="text-xs text-emerald-500 mb-1">TC Khác (CLCV)</p>
-              <p className="text-base font-bold text-emerald-800">{formatCurrency(perfBonus)}</p>
+          </div>
+
+          {/* Gói TN theo HĐLĐ */}
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Gói TN theo HĐLĐ</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-blue-50 rounded-xl p-3">
+                <p className="text-xs text-blue-500 mb-1">Lương cơ bản</p>
+                <p className="text-base font-bold text-blue-800">{formatCurrency(emp.baseSalary)}</p>
+              </div>
+              <div className="bg-orange-50 rounded-xl p-3">
+                <p className="text-xs text-orange-500 mb-1">TC Ăn trưa</p>
+                <p className="text-base font-bold text-orange-800">{formatCurrency(lunch)}</p>
+              </div>
+              <div className="bg-violet-50 rounded-xl p-3">
+                <p className="text-xs text-violet-500 mb-1">HT Điện thoại</p>
+                <p className="text-base font-bold text-violet-800">{formatCurrency(phone)}</p>
+              </div>
+              <div className="bg-emerald-50 rounded-xl p-3">
+                <p className="text-xs text-emerald-500 mb-1">Thưởng HQCV</p>
+                <p className="text-base font-bold text-emerald-800">{formatCurrency(perfBonus)}</p>
+              </div>
             </div>
           </div>
         </div>
@@ -501,14 +606,20 @@ function InfoItem({ icon: Icon, label, value }: { icon: any; label: string; valu
 // ── Form Modal ──
 function EmployeeFormModal({
   employee,
+  grossPackage,
   onSave,
   onClose,
   nextId,
+  saving = false,
+  saveError = null,
 }: {
   employee: Employee | null;
-  onSave: (emp: Employee) => void;
+  grossPackage: GrossPackage;
+  onSave: (emp: Employee) => void | Promise<void>;
   onClose: () => void;
   nextId: string;
+  saving?: boolean;
+  saveError?: string | null;
 }) {
   const [form, setForm] = useState<Employee>(
     employee || {
@@ -610,16 +721,48 @@ function EmployeeFormModal({
               <FormField label="Số tài khoản" value={form.bankAccount} onChange={(v) => update('bankAccount', v)} />
             </div>
           </div>
+
+          {/* Gói lương (Lương TV theo HĐTV, Gói TN theo HĐLĐ) */}
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Gói lương theo nhân viên</p>
+            <p className="text-xs text-slate-500 mb-3">
+              Để trống = dùng mặc định công ty (TC ăn trưa: {formatCurrency(grossPackage.lunch)}, HT ĐT: {formatCurrency(grossPackage.phone)})
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                label="TC Ăn trưa"
+                type="number"
+                value={form.lunchAllowance !== undefined && form.lunchAllowance !== null ? String(form.lunchAllowance) : ''}
+                onChange={(v) => update('lunchAllowance', v === '' ? undefined : Number(v))}
+              />
+              <FormField
+                label="HT Điện thoại"
+                type="number"
+                value={form.phoneAllowance !== undefined && form.phoneAllowance !== null ? String(form.phoneAllowance) : ''}
+                onChange={(v) => update('phoneAllowance', v === '' ? undefined : Number(v))}
+              />
+            </div>
+          </div>
         </div>
+        {saveError && (
+          <div className="mx-6 mb-2 px-4 py-2 rounded-lg bg-red-50 text-red-700 text-sm">
+            {saveError}
+          </div>
+        )}
         <div className="flex justify-end gap-3 p-6 border-t border-slate-100 sticky bottom-0 bg-white">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
+          >
             Hủy
           </button>
           <button
             onClick={() => onSave(form)}
-            className="px-6 py-2 rounded-xl text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/25"
+            disabled={saving}
+            className="px-6 py-2 rounded-xl text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/25 disabled:opacity-50"
           >
-            {employee ? 'Cập nhật' : 'Thêm mới'}
+            {saving ? 'Đang lưu...' : employee ? 'Cập nhật' : 'Thêm mới'}
           </button>
         </div>
       </div>

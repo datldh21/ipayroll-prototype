@@ -84,7 +84,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [grossPackage, setGrossPackage] = useState<GrossPackage>({
     baseSalary: 0,
     lunch: 730_000,
-    phone: 500_000,
+    phone: 0,
   });
   const [payrollBatches, setPayrollBatches] = useState<PayrollBatch[]>([]);
   const [emailsSent, setEmailsSent] = useState<Record<string, boolean>>({});

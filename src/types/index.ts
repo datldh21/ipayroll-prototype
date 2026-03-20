@@ -50,6 +50,9 @@ export interface Employee {
   baseSalary: number;      // Lương cơ bản
   costAccount: string;     // Tài khoản chi phí (GL code, e.g. "642")
   avatar?: string;
+  // Gói lương theo nhân viên (nếu null/undefined → dùng grossPackage global)
+  lunchAllowance?: number;   // TC ăn trưa
+  phoneAllowance?: number;   // HT điện thoại (chỉ HĐLĐ)
 }
 
 // ==================== TIMEKEEPING ====================

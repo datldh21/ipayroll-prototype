@@ -56,8 +56,8 @@ export function calculatePayrollRecord(
   const leaveDays = timekeeping.remainingLeave;
 
   const pkgBase  = grossPackage.baseSalary || employee.baseSalary;
-  const pkgLunch = grossPackage.lunch;
-  const pkgPhone = grossPackage.phone;
+  const pkgLunch = employee.lunchAllowance ?? grossPackage.lunch;
+  const pkgPhone = employee.phoneAllowance ?? grossPackage.phone;
 
   // Thưởng HQCV tự tính từ gói HĐ
   const probPkgPerf = pkgBase - pkgLunch;              // HĐTV: base - lunch
